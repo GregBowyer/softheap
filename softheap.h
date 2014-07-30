@@ -40,7 +40,7 @@ typedef struct {
  *
  * NULL == ERROR
  */
-*softheap_t sh_create(uint_fast32_t size, int (*compar)(const void *, const void *), int flags);
+softheap_t* sh_create(uint_fast32_t size, int (*compar)(const void *, const void *), int flags);
 
 /**
  * Deallocates a softheap, this is
@@ -48,18 +48,15 @@ typedef struct {
  * as this enables the cleanup of any memory mapped
  * segments that might have been opened to support the heap
  */
-int sh_destroy(softheap_t *softheap) {
-    return 1;
-}
+int sh_destroy(softheap_t *softheap);
 
 /**
  * Ensures that the heap has been flushed to stable
  * storage, this is not required for heaps opened in
  * sync mode
  */
-int sh_sync(softheap_t *softheap) {
+int sh_sync(softheap_t *softheap);
 
-}
 /**
  * Return the cardinality of the heap
  * (that is how many elements are in the heap)

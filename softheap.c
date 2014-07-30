@@ -24,6 +24,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "softheap.h"
+
 // Private declarations follow
 #define __SH_EPSILON 0.5
 #define __SH_RANK 6
@@ -33,7 +35,7 @@
  *
  * NULL == ERROR
  */
-*softheap_t sh_create(uint_fast32_t size, int (*compar)(const void *, const void *)) {
+softheap_t* sh_create(uint_fast32_t size, int (*compar)(const void *, const void *), int flags) {
     
 }
 
@@ -45,7 +47,7 @@ int sh_destroy(softheap_t *softheap) {
  * Return the cardinality of the heap
  * (that is how many elements are in the heap)
  */
-uint32_t sh_size(softheap_t *heap) {
+uint32_t sh_cardinality(softheap_t *heap) {
 
 }
 
