@@ -51,7 +51,9 @@ softheap_t* sh_create(int error, int (*compar)(const void *, const void *), int 
         }
     }
 
-    return NULL;
+    // Yes we do use calloc but that might change, dont assume these are NULL
+    heap->tree = NULL;
+    return heap;
 }
 
 int sh_destroy(softheap_t *softheap) {
