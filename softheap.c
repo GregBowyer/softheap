@@ -36,7 +36,7 @@
  * NULL == ERROR
  */
 softheap_t* sh_create(uint_fast32_t size, int (*compar)(const void *, const void *), int flags) {
-    
+    return NULL;
 }
 
 int sh_destroy(softheap_t *softheap) {
@@ -48,20 +48,21 @@ int sh_destroy(softheap_t *softheap) {
  * (that is how many elements are in the heap)
  */
 uint32_t sh_cardinality(softheap_t *heap) {
-
+    return -1;
 }
 
 /**
  * Return the size of the heap in memory
  */
 size_t sh_size(softheap_t *heap) {
+    return -1;
 }
 
 /**
  * Insert a new element into the heap
  */
 int sh_insert(softheap_t *heap, void* key, void* value) {
-
+    return -1;
 }
 
 /**
@@ -71,6 +72,7 @@ int sh_insert(softheap_t *heap, void* key, void* value) {
  * soft heap)
  */
 void* sh_delete(softheap_t *heap, void* key) {
+    return NULL;
 }
 
 /**
@@ -79,7 +81,7 @@ void* sh_delete(softheap_t *heap, void* key) {
  * process
  */
 int sh_meld(softheap_t *dest, softheap_t *src) {
-
+    return -1;
 }
 
 /**
@@ -87,7 +89,9 @@ int sh_meld(softheap_t *dest, softheap_t *src) {
  * the heap, subject to corruption
  */
 int sh_extractmin(softheap_t *heap, void** key, void** value) {
+    return -1;
 }
 
 int sh_iterate(softheap_t *heap, void (*func)(void*,void*)) {
+    return -1;
 }

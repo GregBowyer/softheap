@@ -42,24 +42,22 @@ struct sh_values {
 
 struct sh_node {
     void* key;
-    struct sh_node *left;
-    struct sh_node *right;
+    struct sh_node* left;
+    struct sh_node* right;
     struct sh_values elements;
-    uint8_t rank;
+    uint_fast32_t rank;
 };
 
 struct sh_tree {
-    size_t size;
-    uint32_t cardinality;
-    struct sh_node *root;
-    struct sh_tree *next;
-    struct sh_tree *prev;
-    struct sh_tree *suffixMin;
+    struct sh_node* root;
+    struct sh_tree* suffixMin;
+    struct sh_tree* next;
+    struct sh_tree* prev;
 };
 
 typedef struct {
-    size_t size;
-    uint32_t cardinality;
+    void** value_ptr;
+    struct sh_tree* tree;
 } softheap_t;
 
 /**
