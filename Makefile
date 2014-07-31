@@ -1,4 +1,4 @@
-CFLAGS=-g -Wpadded -Werror -Wall -O3
+CFLAGS=-g -Wpadded -Werror -Wall -O3 --std=c99
 CC=clang
 LDLIBS=
 

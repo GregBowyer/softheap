@@ -27,15 +27,30 @@
 #include "softheap.h"
 
 // Private declarations follow
-#define __SH_EPSILON 0.5
-#define __SH_RANK 6
+#define __SIZE_TABLE_LEN 32
 
 /**
  * Allocates a new softheap
  *
  * NULL == ERROR
  */
-softheap_t* sh_create(uint_fast32_t size, int (*compar)(const void *, const void *), int flags) {
+softheap_t* sh_create(int error, int (*compar)(const void *, const void *), int flags) {
+    // Not yet using shadow pages
+    softheap_t *heap = calloc(1, sizeof(struct softheap));
+
+    // TODO - Null check (actually implement the shadow pages)
+
+    // Section 2.1 in the paper
+    double r = (log2(1/error)) + 5;
+
+    for (int i=0; i<__SIZE_TABLE_LEN; i++) {
+        if (i <= r) {
+            heap->size_table[i] = 1;
+        } else {
+            heap->size_table[i] = (3 * heap->size_table[i-1] + 1) / 2;
+        }
+    }
+
     return NULL;
 }
 

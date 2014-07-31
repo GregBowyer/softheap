@@ -24,6 +24,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <stdint.h>
+#include <math.h>
+#include <stdlib.h>
 
 //TODO - Get the right mmap support somehow
 #include <sys/mman.h>
@@ -55,9 +57,10 @@ struct sh_tree {
     struct sh_tree* prev;
 };
 
-typedef struct {
+typedef struct softheap {
     void** value_ptr;
     struct sh_tree* tree;
+    uint_fast32_t size_table[32];
 } softheap_t;
 
 /**
@@ -65,7 +68,7 @@ typedef struct {
  *
  * NULL == ERROR
  */
-softheap_t* sh_create(uint_fast32_t size, int (*compar)(const void *, const void *), int flags);
+softheap_t* sh_create(int error, int (*compar)(const void *, const void *), int flags);
 
 /**
  * Deallocates a softheap, this is
