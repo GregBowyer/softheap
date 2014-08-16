@@ -57,6 +57,8 @@ softheap_t* sh_create(int error, int (*compar)(const void *, const void *), int 
 }
 
 int sh_destroy(softheap_t *softheap) {
+    // Stub, why ? because this is actually really really easy
+    // when we are on shadow-pages, to destroy, destroy the mmap()
     return 1;
 }
 

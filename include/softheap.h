@@ -58,10 +58,23 @@ struct sh_tree {
 };
 
 typedef struct softheap {
-    void** value_ptr;
     struct sh_tree* tree;
     uint_fast32_t size_table[32];
+    /** Maybe
+     *
+    softheap_t* (*new)(int error, int (*compar)(const void *, const void *), int flags);
+    int (*destroy)(softheap_t *softheap);
+    int (*sync)(softheap_t *softheap);
+    uint32_t (*cardinality)(softheap_t *heap);
+    size_t (*size)(softheap_t *heap);
+    int (*add)(softheap_t *heap, void* key, void* value);
+    void* (*delete)(softheap_t *heap, void* key);
+    int (*meld)(softheap_t *dest, softheap_t *src);
+    int (*extractmin)(softheap_t *heap, void** key, void** value);
+    */
 } softheap_t;
+
+//
 
 /**
  * Allocates a new softheap
