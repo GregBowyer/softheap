@@ -26,3 +26,13 @@
 *.i*86
 *.x86_64
 *.hex
+
+# CMake
+CMakeCache.txt
+CMakeFiles
+Makefile
+cmake_install.cmake
+install_manifest.txt
+build
+ck/tmp
+ck/src/concurrency-kit-stamp
