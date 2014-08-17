@@ -23,4 +23,5 @@ ADD_LIBRARY(softheap
     ck/lib/libck.a
 )
 
+ADD_DEPENDENCIES(softheap concurrency-kit)
 TARGET_LINK_LIBRARIES(softheap)
