@@ -1,6 +1,8 @@
 #ifndef __SH_COMMON_H__
 #define __SH_COMMON_H__
 
+#define _XOPEN_SOURCE 700
+
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -9,12 +11,9 @@
 do {                                                              \
     if (!(p)) {                                                   \
         burst_into_flames(__FILE__, __LINE__, msg);               \
+        printf("%s - %s:%d", msg, file, line);                    \
+        abort();                                                  \
     }                                                             \
 } while(0)
-
-void burst_into_flames(const char* file, int line, const char* msg) {
-    printf("%s - %s:%d", msg, file, line);
-    abort();
-}
 
 #endif 
