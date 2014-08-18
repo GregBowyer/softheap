@@ -26,6 +26,7 @@ TEST test_size_written() {
 TEST test_basic_store() {
     size_t size = 250 * sizeof(char);
     char *data = (char*) calloc(1, size);
+    memset(data, 'A', 250);
     ASSERT(data != NULL);
 
     uint64_t curr_offset = ((store_t*)store)->cursor(store);
