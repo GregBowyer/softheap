@@ -1,23 +1,43 @@
 #include "store.h"
+#include <stdlib.h>
+
+#include <lz4.h>
 
 struct lz4_store {
     store_t store;
     store_t *underlying_store;
 };
 
-/*
- * Write data into the store implementation
- *
- * params
- *  *data - data to write
- *  size - amount to write
- *
- * return
- *  0 - On success
- *  1 - Capacity exceeded
- */
 uint64_t _lz4store_write(void *store, void *data, size_t size) {
-    return EXIT_FAILURE;
+    int offset = -1;
+
+    struct lz4_store *lz_store = (struct lz4_store*) store;
+    store_t *delegate = lz_store->underlying_store;
+
+    // TODO - What to do if size > LZ4_MAX ?
+    int compSize = LZ4_compressBound(size);
+    int storeSize = compSize + sizeof(uint32_t) + sizeof(uint64_t);
+
+    // TODO - I dont link this, it is dumb
+    void *buf = calloc(1, storeSize);
+    if (buf == NULL) return -1;
+    ((uint32_t*)buf)[0] = compSize;
+    ((uint32_t*)buf)[1] = size;
+
+    void *comp_section = buf + sizeof(uint32_t) + sizeof(uint64_t);
+    int compress_size = LZ4_compress(data, comp_section, size);
+    if (compress_size == 0) goto exit;
+
+    offset = ((store_t*)delegate)->write(delegate, buf, storeSize);
+    // TODO check offset for errors, it might be, for instance
+    // were we unable to store due to an out-of-space in the underlying
+    // store ??
+
+exit:
+    // HACK FOR NOW
+    ((store_t*)delegate)->sync(delegate);
+    free(buf);
+    return offset;
 }
 
 /**

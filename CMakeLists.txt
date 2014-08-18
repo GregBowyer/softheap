@@ -16,7 +16,7 @@ INCLUDE_DIRECTORIES(include ck/include)
 SET(CMAKE_C_FLAGS
     # Reenable when no more unused params
     #"-Werror -Wall -Wextra -pedantic -O3 --std=c99")
-    "-Werror -Wall -O3 --std=c99")
+    "-Werror -Wall -fPIC -O3 --std=c99")
 SET(CMAKE_C_FLAGS_DEBUG "-g")
 
 ADD_LIBRARY(lz4
@@ -49,10 +49,13 @@ SET_TARGET_PROPERTIES(softheap-static
 ADD_DEPENDENCIES(softheap lz4 concurrency-kit)
 ADD_DEPENDENCIES(softheap-static lz4 concurrency-kit)
 TARGET_LINK_LIBRARIES(softheap 
+    lz4
     ${CMAKE_CURRENT_BINARY_DIR}/ck/lib/libck.so.0.4.3)
 TARGET_LINK_LIBRARIES(softheap-static 
+    lz4
     ${CMAKE_CURRENT_BINARY_DIR}/ck/lib/libck.a)
 
 ADD_SUBDIRECTORY(test)
 ENABLE_TESTING()
 ADD_TEST(NAME test_mmap_store COMMAND test_mmap_store)
+ADD_TEST(NAME test_lz4_store COMMAND test_lz4_store)

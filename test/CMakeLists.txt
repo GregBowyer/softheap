@@ -16,3 +16,7 @@ SET_TARGET_PROPERTIES(theft
 ADD_EXECUTABLE(test_mmap_store store/test_mmap_store.c)
 ADD_DEPENDENCIES(test_mmap_store softheap-static)
 TARGET_LINK_LIBRARIES(test_mmap_store theft softheap-static) 
+
+ADD_EXECUTABLE(test_lz4_store store/test_lz4store.c)
+ADD_DEPENDENCIES(test_lz4_store softheap-static)
+TARGET_LINK_LIBRARIES(test_lz4_store theft softheap-static)
