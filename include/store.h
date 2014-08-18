@@ -6,6 +6,18 @@
 #include <stddef.h>
 #include <stdint.h>
 
+typedef struct store_cursor {
+    /**
+     * The size of the forthcoming data
+     */
+    size_t size;
+
+    /**
+     * A pointer to the forthcoming data
+     */
+    void* data;
+} store_cursor_t;
+
 typedef struct store {
     /*
      * Write data into the store implementation
@@ -31,7 +43,7 @@ typedef struct store {
      *  NULL - unable to seek
      *
      */
-    void* (*offset) (void *store, uint64_t pos);
+    store_cursor_t (*offset) (void *store, uint64_t pos);
 
     /**
      * Return remaining capacity of the store

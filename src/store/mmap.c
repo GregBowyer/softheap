@@ -40,8 +40,9 @@ int _mmap_write(void *store, void *data, size_t size) {
  *  NULL - unable to seek
  *
  */
-void* _mmap_offset(void *store, uint64_t pos) {
-    return NULL;
+store_cursor_t _mmap_offset(void *store, uint64_t pos) {
+    store_cursor_t to_ret;
+    return to_ret;
 }
 
 /**

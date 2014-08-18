@@ -13,23 +13,38 @@ ExternalProject_Add(
 
 INCLUDE_DIRECTORIES(include ck/include)
 
-SET(CMAKE_C_FLAGS "-Wpadded -Werror -Wall -O3 --std=c99")
+SET(CMAKE_C_FLAGS "-Werror -Wall -O3 --std=c99")
 SET(CMAKE_C_FLAGS_DEBUG "-g")
+
+ADD_LIBRARY(lz4
+    STATIC
+    lz4/lz4.c
+    lz4/lz4hc.c
+)
 
 ADD_LIBRARY(softheap-static
     STATIC
-    src/fifo.c
+    src/store/mmap.c
+    src/store/lz4_store.c
+    #src/fifo.c
     #src/softheap.c
 )
 
 ADD_LIBRARY(softheap
     SHARED
-    src/fifo.c
+    src/store/mmap.c
+    src/store/lz4_store.c
+    #src/fifo.c
     #src/softheap.c
 )
 
-ADD_DEPENDENCIES(softheap concurrency-kit)
-ADD_DEPENDENCIES(softheap-static concurrency-kit)
+SET_TARGET_PROPERTIES(softheap
+    PROPERTIES COMPILE_FLAGS "-Wpadded")
+SET_TARGET_PROPERTIES(softheap-static
+    PROPERTIES COMPILE_FLAGS "-Wpadded")
+
+ADD_DEPENDENCIES(softheap lz4 concurrency-kit)
+ADD_DEPENDENCIES(softheap-static lz4 concurrency-kit)
 TARGET_LINK_LIBRARIES(softheap 
     ${CMAKE_CURRENT_BINARY_DIR}/ck/lib/libck.so.0.4.3)
 TARGET_LINK_LIBRARIES(softheap-static 
