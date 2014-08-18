@@ -1,3 +1,7 @@
+env:
+  global:
+   - secure: "GwbacBrohqSa79IaJETZ3weHRDqpZYp47CNWEmNMTgXC4o/HJgQDjTJpZ9PLVGlxTwjzGPoa8/lHQaPjCtKmmms0hRFWa218dSePbW8gmHK2L+XuFEJgqklq4a/BMGsS8kqVRzpGrrDqFe8Rev7IOd/j/m3rRYMFEXt9HSYaExg="
+
 language: c
 
 compiler:
@@ -10,3 +14,13 @@ before_script:
     - cmake ..
 
 script: make && make test
+
+addons:
+  coverity_scan:
+    project:
+      name: "GregBowyer/softheap"
+      description: "<Your project description here>"
+    notification_email: gbowyer@fastmail.co.uk
+    build_command_prepend: "mkdir coverity && cd coverity && cmake .."
+    build_command:   "cd coverity && make"
+    branch_pattern: coverity_scan
