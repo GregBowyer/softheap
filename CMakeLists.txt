@@ -13,7 +13,10 @@ ExternalProject_Add(
 
 INCLUDE_DIRECTORIES(include ck/include)
 
-SET(CMAKE_C_FLAGS "-Werror -Wall -O3 --std=c99")
+SET(CMAKE_C_FLAGS
+    # Reenable when no more unused params
+    #"-Werror -Wall -Wextra -pedantic -O3 --std=c99")
+    "-Werror -Wall -O3 --std=c99")
 SET(CMAKE_C_FLAGS_DEBUG "-g")
 
 ADD_LIBRARY(lz4
@@ -48,4 +51,8 @@ ADD_DEPENDENCIES(softheap-static lz4 concurrency-kit)
 TARGET_LINK_LIBRARIES(softheap 
     ${CMAKE_CURRENT_BINARY_DIR}/ck/lib/libck.so.0.4.3)
 TARGET_LINK_LIBRARIES(softheap-static 
-    ${CMAKE_CURRENT_BINARY_DIR}/ck/lib/libck.so.0.4.3)
+    ${CMAKE_CURRENT_BINARY_DIR}/ck/lib/libck.a)
+
+ADD_SUBDIRECTORY(test)
+ENABLE_TESTING()
+ADD_TEST(NAME test_mmap_store COMMAND test_mmap_store)
