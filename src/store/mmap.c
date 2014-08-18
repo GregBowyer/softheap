@@ -60,7 +60,8 @@ uint64_t _mmap_write(void *store, void *data, size_t size) {
     ensure(cursor_pos != 0, "Invalid cursor position");
 
     ((uint64_t *)mapping)[cursor_pos] = (uint64_t) size;
-    memcpy(&mstore->mapping[cursor_pos] + sizeof(uint64_t), data, size);
+    void *dest = (mstore->mapping + (cursor_pos + sizeof(uint64_t)));
+    memcpy(dest, data, size);
 
     // TODO - Schedule / do a sync check
     return cursor_pos;
