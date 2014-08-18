@@ -27,10 +27,10 @@ typedef struct store {
      *  size - amount to write
      *
      * return
-     *  0 - On success
-     *  1 - Capacity exceeded
+     *  the offset in the store
+     *  -1 on error
      */
-    int (*write)(void *store, void *data, size_t size);
+    uint64_t (*write)(void *store, void *data, size_t size);
 
     /**
      * Get a pointer to some data at offset

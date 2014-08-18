@@ -5,12 +5,18 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include <sys/mman.h>
+#include <string.h>
+#include <ck_pr.h>
+
 struct mmap_store {
     store_t store;
     int fd;
     int flags;
-    volatile uint64_t capacity;
-    volatile uint64_t cursor;
+    uint64_t capacity;
+
+    uint64_t write_cursor; // MUST BE CAS GUARDED
+    uint64_t sync_cursor;  // MUST BE CAS GUARDED
     void* mapping;
 };
 
@@ -22,11 +28,42 @@ struct mmap_store {
  *  size - amount to write
  *
  * return
- *  0 - On success
- *  1 - Capacity exceeded
+ *  -1 - Capacity exceeded
  */
-int _mmap_write(void *store, void *data, size_t size) {
-    return EXIT_FAILURE;
+uint64_t _mmap_write(void *store, void *data, size_t size) {
+    struct mmap_store *mstore = (struct mmap_store*) store;
+    void * mapping = mstore->mapping;
+    ensure(mapping != NULL, "Bad mapping");
+
+    // [SIZE_T,BYTES]
+    uint64_t *write_cursor = &mstore->write_cursor;
+    uint64_t required_size = (sizeof(uint64_t) + size);
+
+    uint64_t cursor_pos = 0;
+    uint64_t new_pos = 0;
+
+    while (true) {
+        cursor_pos = ck_pr_load_64(write_cursor);
+        ensure(cursor_pos != 0, "Incorrect cursor pos");
+        uint64_t remaining = mstore->capacity - cursor_pos;
+
+        if (remaining <= required_size) {
+            return -1;
+        }
+
+        new_pos = cursor_pos + required_size;
+        if (ck_pr_cas_64(write_cursor, cursor_pos, new_pos)) {
+            break;
+        }
+    }
+    ensure(new_pos != 0, "Invalid write position");
+    ensure(cursor_pos != 0, "Invalid cursor position");
+
+    ((uint64_t *)mapping)[cursor_pos] = (uint64_t) size;
+    memcpy(&mstore->mapping[cursor_pos] + sizeof(uint64_t), data, size);
+
+    // TODO - Schedule / do a sync check
+    return cursor_pos;
 }
 
 /**
@@ -57,7 +94,8 @@ uint64_t _mmap_capacity(void *store) {
  * consumed up to
  */
 uint64_t _mmap_cursor(void *store) {
-    return 0;        
+    struct mmap_store *mstore = (struct mmap_store*) store;
+    return ck_pr_load_64(&mstore->write_cursor);
 }
 
 /**
@@ -68,6 +106,8 @@ uint64_t _mmap_cursor(void *store) {
  *  1 - failure 
  */
 uint64_t _mmap_sync(void *store) {
+    //TODO: Protect the nearest page once sunk
+    //mprotect(mapping, off, PROT_READ);
     return 0;
 }
 
@@ -98,27 +138,44 @@ int _mmap_destroy(void *store) {
 store_t* create_mmap_store(uint64_t size, const char* base_dir, const char* name, int flags) {
     //TODO : Enforce a max size
     //TODO : Check flags
-    int dir_fd = open(base_dir, 
-                      O_CREAT | O_DIRECTORY,
-                      S_IRUSR | S_IWUSR);
+    //TODO : check thread sanity
+    //TODO : check size is near a page
+    int dir_fd = open(base_dir, O_DIRECTORY, (mode_t)0600);
     if (dir_fd == -1) return NULL;
 
-    int real_fd = openat(dir_fd, name,
-                         O_CREAT,
-                         S_IRUSR | S_IWUSR);
-
+    int real_fd = openat(dir_fd, name, O_RDWR | O_CREAT, (mode_t)0600);
     close(dir_fd);
 
     // TODO - Check for the race condition if two people attempt to create
     // the same segment
     if (real_fd == -1) return NULL;
 
+    if (posix_fallocate(real_fd, 0, size) != 0) {
+        close(real_fd);
+        return NULL;
+    }
+
     struct mmap_store *store = (struct mmap_store*) calloc(1, sizeof(struct mmap_store));
     if (store == NULL) return NULL;
+
+    void *mapping = mmap(NULL, (size_t) size, PROT_READ | PROT_WRITE, MAP_SHARED, real_fd, 0);
+    if (mapping == NULL) return NULL;
+
+    uint64_t off = sizeof(uint64_t) * 2;
+    ((uint64_t *)mapping)[0] = 0xDEADBEEF;
+    ((uint64_t *)mapping)[1] = size;
 
     store->fd = real_fd;
     store->capacity = size;
     store->flags = flags;
+    store->mapping = mapping;
+
+    ck_pr_store_64(&store->write_cursor, off);
+    ck_pr_store_64(&store->sync_cursor, off);
+    ck_pr_fence_atomic();
+    ensure(msync(mapping, off, MS_SYNC) == 0, "Unable to sync");
+    ensure(store->write_cursor != 0, "Cursor incorrect");
+    ensure(store->sync_cursor != 0, "Cursor incorrect");
 
     ((store_t *)store)->write    = &_mmap_write;
     ((store_t *)store)->offset   = &_mmap_offset;

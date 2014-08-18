@@ -16,7 +16,7 @@ struct lz4_store {
  *  0 - On success
  *  1 - Capacity exceeded
  */
-int _lz4store_write(void *store, void *data, size_t size) {
+uint64_t _lz4store_write(void *store, void *data, size_t size) {
     return EXIT_FAILURE;
 }
 
