@@ -11,7 +11,7 @@ ADD_LIBRARY(theft
     theft/theft_mt.c
 )
 SET_TARGET_PROPERTIES(theft
-    PROPERTIES COMPILE_FLAGS "-Wno-format")
+    PROPERTIES COMPILE_FLAGS "-Wno-format -Wno-parentheses")
 
 ADD_EXECUTABLE(test_mmap_store store/test_mmap_store.c)
 ADD_DEPENDENCIES(test_mmap_store softheap-static)
