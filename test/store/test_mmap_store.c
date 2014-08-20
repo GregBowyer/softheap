@@ -6,18 +6,20 @@ struct mmap_store {
     store_t store;
     int fd;
     int flags;
-    uint64_t capacity;
-    uint64_t sync_cursor;
-    uint64_t write_cursor;
     void* mapping;
+    uint32_t __padding;
+    uint32_t capacity;
+
+    uint32_t write_cursor; // MUST BE CAS GUARDED
+    uint32_t sync_cursor;  // MUST BE CAS GUARDED
 };
 
 static struct mmap_store *store;
-static const uint64_t SIZE = 1024 * 1024 * 64;
+static const uint32_t SIZE = 1024 * 1024 * 64;
 
 TEST test_size_written() {
     // Break encapsulation (naughty naughty)
-    uint64_t *store_as_ints = (uint64_t *) store->mapping;
+    uint32_t *store_as_ints = (uint32_t*) store->mapping;
     ASSERT_EQ(0xDEADBEEF, store_as_ints[0]);
     ASSERT_EQ(SIZE, store_as_ints[1]);
     PASS();
@@ -29,26 +31,26 @@ TEST test_basic_store() {
     memset(data, 'A', 250);
     ASSERT(data != NULL);
 
-    uint64_t curr_offset = ((store_t*)store)->cursor(store);
-    ASSERT(curr_offset == sizeof(uint64_t) * 2);
+    uint32_t curr_offset = ((store_t*)store)->cursor(store);
+    ASSERT(curr_offset == sizeof(uint32_t) * 2);
 
-    uint64_t a_offset = ((store_t*)store)->write(store, data, size);
+    uint32_t a_offset = ((store_t*)store)->write(store, data, size);
     ASSERT(a_offset > 0);
     ASSERT_EQ(curr_offset, a_offset);
 
-    uint64_t new_offset = ((store_t*)store)->cursor(store);
-    // There is one uint64 at the start of the store
+    uint32_t new_offset = ((store_t*)store)->cursor(store);
+    // There is one uint32 at the start of the store
     // anything else is the offset + stuff
-    ASSERT_EQ(size + sizeof(uint64_t) + curr_offset, new_offset);
+    ASSERT_EQ(size + sizeof(uint32_t) + curr_offset, new_offset);
 
     size = 300 * sizeof(char);
     data = (char*) calloc(1, size);
     memset(data, 'B', 300);
     ASSERT(data != NULL);
 
-    uint64_t b_offset = ((store_t *)store)->write(store, data, size);
-    uint64_t expected_offset =
-        b_offset + sizeof(uint64_t) + 300 * sizeof(char);
+    uint32_t b_offset = ((store_t *)store)->write(store, data, size);
+    uint32_t expected_offset =
+        b_offset + sizeof(uint32_t) + 300 * sizeof(char);
 
     new_offset = ((store_t*)store)->cursor(store);
 
@@ -59,9 +61,8 @@ TEST test_basic_store() {
     void *mapping = store->mapping;
 
     int8_t expected[600] = {
-      0xEF, 0xBE, 0xAD, 0xDE, 0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00,
-      0xFA, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0xEF, 0xBE, 0xAD, 0xDE, 0x00, 0x00, 0x00, 0x04,
+      0xFA, 0x00, 0x00, 0x00, 0x41, 0x41, 0x41, 0x41,
       0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
       0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
       0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
@@ -92,8 +93,7 @@ TEST test_basic_store() {
       0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
       0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
       0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
-      0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
-      0x41, 0x41, 0x2C, 0x01, 0x00, 0x00, 0x00, 0x00,
+      0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x2C, 0x01,
       0x00, 0x00, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42,
       0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42,
       0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42,
@@ -133,10 +133,12 @@ TEST test_basic_store() {
       0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42,
       0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
     };
 
-    uint64_t test_len = ((store_t*)store)->cursor(store);
+    uint32_t test_len = ((store_t*)store)->cursor(store);
     ASSERT_EQ(memcmp(&expected, mapping, test_len), 0);
     PASS();
 }

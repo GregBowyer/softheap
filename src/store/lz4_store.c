@@ -8,7 +8,7 @@ struct lz4_store {
     store_t *underlying_store;
 };
 
-uint64_t _lz4store_write(void *store, void *data, size_t size) {
+uint32_t _lz4store_write(void *store, void *data, uint32_t size) {
     int offset = -1;
 
     struct lz4_store *lz_store = (struct lz4_store*) store;
@@ -16,7 +16,7 @@ uint64_t _lz4store_write(void *store, void *data, size_t size) {
 
     // TODO - What to do if size > LZ4_MAX ?
     int compSize = LZ4_compressBound(size);
-    int storeSize = compSize + sizeof(uint32_t) + sizeof(uint64_t);
+    int storeSize = compSize + sizeof(uint32_t) + sizeof(uint32_t);
 
     // TODO - I dont link this, it is dumb
     void *buf = calloc(1, storeSize);
@@ -24,7 +24,7 @@ uint64_t _lz4store_write(void *store, void *data, size_t size) {
     ((uint32_t*)buf)[0] = compSize;
     ((uint32_t*)buf)[1] = size;
 
-    void *comp_section = buf + sizeof(uint32_t) + sizeof(uint64_t);
+    void *comp_section = buf + sizeof(uint32_t) + sizeof(uint32_t);
     int compress_size = LZ4_compress(data, comp_section, size);
     if (compress_size == 0) goto exit;
 
@@ -51,7 +51,7 @@ exit:
  *  NULL - unable to seek
  *
  */
-store_cursor_t _lz4store_offset(void *store, uint64_t pos) {
+store_cursor_t _lz4store_offset(void *store, uint32_t pos) {
     store_cursor_t to_ret;
     return to_ret;
 }
@@ -59,7 +59,7 @@ store_cursor_t _lz4store_offset(void *store, uint64_t pos) {
 /**
  * Return remaining capacity of the store
  */
-uint64_t _lz4store_capacity(void *store) {
+uint32_t _lz4store_capacity(void *store) {
     return EXIT_FAILURE;
 }
 
@@ -67,7 +67,7 @@ uint64_t _lz4store_capacity(void *store) {
  * Return the cursor of where the store is
  * consumed up to
  */
-uint64_t _lz4store_cursor(void *store) {
+uint32_t _lz4store_cursor(void *store) {
     return 0;        
 }
 
@@ -78,7 +78,7 @@ uint64_t _lz4store_cursor(void *store) {
  *  0 - success
  *  1 - failure 
  */
-uint64_t _lz4store_sync(void *store) {
+uint32_t _lz4store_sync(void *store) {
     return 0;
 }
 

@@ -13,11 +13,12 @@ struct mmap_store {
     store_t store;
     int fd;
     int flags;
-    uint64_t capacity;
-
-    uint64_t write_cursor; // MUST BE CAS GUARDED
-    uint64_t sync_cursor;  // MUST BE CAS GUARDED
     void* mapping;
+    uint32_t __padding;
+    uint32_t capacity;
+
+    uint32_t write_cursor; // MUST BE CAS GUARDED
+    uint32_t sync_cursor;  // MUST BE CAS GUARDED
 };
 
 /*
@@ -30,29 +31,29 @@ struct mmap_store {
  * return
  *  -1 - Capacity exceeded
  */
-uint64_t _mmap_write(void *store, void *data, size_t size) {
+uint32_t _mmap_write(void *store, void *data, uint32_t size) {
     struct mmap_store *mstore = (struct mmap_store*) store;
     void * mapping = mstore->mapping;
     ensure(mapping != NULL, "Bad mapping");
 
-    // [SIZE_T,BYTES]
-    uint64_t *write_cursor = &mstore->write_cursor;
-    uint64_t required_size = (sizeof(uint64_t) + size);
+    // [uint32_t,BYTES]
+    uint32_t *write_cursor = &mstore->write_cursor;
+    uint32_t required_size = (sizeof(uint32_t) + size);
 
-    uint64_t cursor_pos = 0;
-    uint64_t new_pos = 0;
+    uint32_t cursor_pos = 0;
+    uint32_t new_pos = 0;
 
     while (true) {
-        cursor_pos = ck_pr_load_64(write_cursor);
+        cursor_pos = ck_pr_load_32(write_cursor);
         ensure(cursor_pos != 0, "Incorrect cursor pos");
-        uint64_t remaining = mstore->capacity - cursor_pos;
+        uint32_t remaining = mstore->capacity - cursor_pos;
 
         if (remaining <= required_size) {
             return -1;
         }
 
         new_pos = cursor_pos + required_size;
-        if (ck_pr_cas_64(write_cursor, cursor_pos, new_pos)) {
+        if (ck_pr_cas_32(write_cursor, cursor_pos, new_pos)) {
             break;
         }
     }
@@ -60,8 +61,8 @@ uint64_t _mmap_write(void *store, void *data, size_t size) {
     ensure(cursor_pos != 0, "Invalid cursor position");
 
     void *dest = (mapping + cursor_pos);
-    ((uint64_t*)dest)[0] = (uint64_t) size;
-    dest += sizeof(uint64_t);
+    ((uint32_t*)dest)[0] = (uint32_t) size;
+    dest += sizeof(uint32_t);
     memcpy(dest, data, size);
 
     // TODO - Schedule / do a sync check
@@ -79,7 +80,7 @@ uint64_t _mmap_write(void *store, void *data, size_t size) {
  *  NULL - unable to seek
  *
  */
-store_cursor_t _mmap_offset(void *store, uint64_t pos) {
+store_cursor_t _mmap_offset(void *store, uint32_t pos) {
     store_cursor_t to_ret;
     return to_ret;
 }
@@ -87,7 +88,7 @@ store_cursor_t _mmap_offset(void *store, uint64_t pos) {
 /**
  * Return remaining capacity of the store
  */
-uint64_t _mmap_capacity(void *store) {
+uint32_t _mmap_capacity(void *store) {
     return EXIT_FAILURE;
 }
 
@@ -95,9 +96,9 @@ uint64_t _mmap_capacity(void *store) {
  * Return the cursor of where the store is
  * consumed up to
  */
-uint64_t _mmap_cursor(void *store) {
+uint32_t _mmap_cursor(void *store) {
     struct mmap_store *mstore = (struct mmap_store*) store;
-    return ck_pr_load_64(&mstore->write_cursor);
+    return ck_pr_load_32(&mstore->write_cursor);
 }
 
 /**
@@ -107,7 +108,7 @@ uint64_t _mmap_cursor(void *store) {
  *  0 - success
  *  1 - failure 
  */
-uint64_t _mmap_sync(void *store) {
+uint32_t _mmap_sync(void *store) {
     //TODO: Protect the nearest page once sunk
     //mprotect(mapping, off, PROT_READ);
     return 0;
@@ -137,7 +138,7 @@ int _mmap_destroy(void *store) {
     return EXIT_FAILURE;
 }
 
-store_t* create_mmap_store(uint64_t size, const char* base_dir, const char* name, int flags) {
+store_t* create_mmap_store(uint32_t size, const char* base_dir, const char* name, int flags) {
     //TODO : Enforce a max size
     //TODO : Check flags
     //TODO : check thread sanity
@@ -163,17 +164,17 @@ store_t* create_mmap_store(uint64_t size, const char* base_dir, const char* name
     void *mapping = mmap(NULL, (size_t) size, PROT_READ | PROT_WRITE, MAP_SHARED, real_fd, 0);
     if (mapping == NULL) return NULL;
 
-    uint64_t off = sizeof(uint64_t) * 2;
-    ((uint64_t *)mapping)[0] = 0xDEADBEEF;
-    ((uint64_t *)mapping)[1] = size;
+    uint32_t off = sizeof(uint32_t) * 2;
+    ((uint32_t *)mapping)[0] = 0xDEADBEEF;
+    ((uint32_t *)mapping)[1] = size;
 
     store->fd = real_fd;
     store->capacity = size;
     store->flags = flags;
     store->mapping = mapping;
 
-    ck_pr_store_64(&store->write_cursor, off);
-    ck_pr_store_64(&store->sync_cursor, off);
+    ck_pr_store_32(&store->write_cursor, off);
+    ck_pr_store_32(&store->sync_cursor, off);
     ck_pr_fence_atomic();
     ensure(msync(mapping, off, MS_SYNC) == 0, "Unable to sync");
     ensure(store->write_cursor != 0, "Cursor incorrect");

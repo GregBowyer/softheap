@@ -8,7 +8,7 @@ struct lz4_store {
 };
 
 static struct lz4_store *store;
-static const uint64_t SIZE = 1024 * 1024 * 64;
+static const uint32_t SIZE = 1024 * 1024 * 64;
 
 TEST test_compress_and_store() {
     size_t size = 250 * sizeof(char);
@@ -16,7 +16,7 @@ TEST test_compress_and_store() {
     memset(data, 'A', 250);
     ASSERT(data != NULL);
 
-    uint64_t a_offset = ((store_t*)store)->write(store, data, size);
+    uint32_t a_offset = ((store_t*)store)->write(store, data, size);
     ASSERT(a_offset > 0);
     PASS();
 }
