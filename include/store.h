@@ -85,7 +85,7 @@ typedef struct store_cursor {
     /**
      * Seek the cursor to the given offset
      */
-    enum store_read_status (*seek)(struct store_cursor *, uint32_t offset);
+    enum store_read_status (*seek)(struct store_cursor *, uint32_t);
 
     /**
      * Destroy this cursor, this must be called
@@ -109,7 +109,7 @@ typedef struct store {
      *  the offset in the store
      *  -1 on error
      */
-    uint32_t (*write)(void *store, void *data, uint32_t size);
+    uint32_t (*write)(struct store *, void *, uint32_t);
 
     /**
      * Create a read cursor for this store
@@ -123,14 +123,14 @@ typedef struct store {
      * return
      *  NULL - The cursor could not be bound / created
      */
-    store_cursor_t* (*open_cursor) (void *store);
+    store_cursor_t* (*open_cursor) (struct store *);
 
     /**
      * Return remaining capacity of the store
      * This number is saved in the store at the
      * start of the store
      */
-    uint32_t (*capacity) (void *store);
+    uint32_t (*capacity) (struct store *);
 
     /**
      * Return the cursor of where the store is
@@ -138,7 +138,7 @@ typedef struct store {
      * This is not saved in the store, you are
      * responsible for persisting this data elsewhere
      */
-    uint32_t (*cursor) (void *store);
+    uint32_t (*cursor) (struct store *);
 
     /**
      * Force this store to sync if needed
@@ -147,7 +147,7 @@ typedef struct store {
      *   Position where the cursor is synced to
      *   -1 on error
      */
-    uint32_t (*sync) (void *store);
+    uint32_t (*sync) (struct store *);
 
     /**
      * Close this store (and optionally sync), all
@@ -157,7 +157,7 @@ typedef struct store {
      *  0 - success
      *  1 - failure
      */
-    int (*close) (void *store, bool sync);
+    int (*close) (struct store *, bool);
 
     /**
      * Destroy this store, all calls after a destroy
@@ -167,7 +167,7 @@ typedef struct store {
      *  0 - success
      *  1 - failure
      */
-    int (*destroy) (void *store);
+    int (*destroy) (struct store *);
 } store_t;
 
 store_t* create_mmap_store(uint32_t size, const char* base_dir,

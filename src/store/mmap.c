@@ -38,7 +38,7 @@ struct mmap_store_cursor {
  * return
  *  -1 - Capacity exceeded
  */
-uint32_t _mmap_write(void *store, void *data, uint32_t size) {
+uint32_t _mmap_write(store_t *store, void *data, uint32_t size) {
     struct mmap_store *mstore = (struct mmap_store*) store;
     void * mapping = mstore->mapping;
     ensure(mapping != NULL, "Bad mapping");
@@ -129,7 +129,7 @@ void _mmap_cursor_destroy(store_cursor_t *cursor) {
     free(cursor);
 }
 
-store_cursor_t* _mmap_open_cursor(void *store) {
+store_cursor_t* _mmap_open_cursor(store_t *store) {
     struct mmap_store *mstore = (struct mmap_store*) store;
     void * mapping = mstore->mapping;
     ensure(mapping != NULL, "Bad mapping");
@@ -153,7 +153,7 @@ store_cursor_t* _mmap_open_cursor(void *store) {
 /**
  * Return remaining capacity of the store
  */
-uint32_t _mmap_capacity(void *store) {
+uint32_t _mmap_capacity(store_t *store) {
     return EXIT_FAILURE;
 }
 
@@ -161,7 +161,7 @@ uint32_t _mmap_capacity(void *store) {
  * Return the cursor of where the store is
  * consumed up to
  */
-uint32_t _mmap_cursor(void *store) {
+uint32_t _mmap_cursor(store_t *store) {
     struct mmap_store *mstore = (struct mmap_store*) store;
     return ck_pr_load_32(&mstore->write_cursor);
 }
@@ -173,7 +173,7 @@ uint32_t _mmap_cursor(void *store) {
  *  0 - success
  *  1 - failure 
  */
-uint32_t _mmap_sync(void *store) {
+uint32_t _mmap_sync(store_t *store) {
     //TODO: Protect the nearest page once sunk
     //mprotect(mapping, off, PROT_READ);
     return 0;
@@ -187,7 +187,7 @@ uint32_t _mmap_sync(void *store) {
  *  0 - success
  *  1 - failure
  */
-int _mmap_close(void *store, bool sync) {
+int _mmap_close(store_t *store, bool sync) {
     return EXIT_FAILURE;
 }
 
@@ -199,7 +199,7 @@ int _mmap_close(void *store, bool sync) {
  *  0 - success
  *  1 - failure
  */
-int _mmap_destroy(void *store) {
+int _mmap_destroy(store_t *store) {
     return EXIT_FAILURE;
 }
 

@@ -31,14 +31,14 @@ TEST test_basic_store() {
     memset(data, 'A', 250);
     ASSERT(data != NULL);
 
-    uint32_t curr_offset = ((store_t*)store)->cursor(store);
+    uint32_t curr_offset = ((store_t*)store)->cursor((store_t*) store);
     ASSERT(curr_offset == sizeof(uint32_t) * 2);
 
-    uint32_t a_offset = ((store_t*)store)->write(store, data, size);
+    uint32_t a_offset = ((store_t*)store)->write((store_t*) store, data, size);
     ASSERT(a_offset > 0);
     ASSERT_EQ(curr_offset, a_offset);
 
-    uint32_t new_offset = ((store_t*)store)->cursor(store);
+    uint32_t new_offset = ((store_t*)store)->cursor((store_t*) store);
     // There is one uint32 at the start of the store
     // anything else is the offset + stuff
     ASSERT_EQ(size + sizeof(uint32_t) + curr_offset, new_offset);
@@ -48,11 +48,11 @@ TEST test_basic_store() {
     memset(data, 'B', 300);
     ASSERT(data != NULL);
 
-    uint32_t b_offset = ((store_t *)store)->write(store, data, size);
+    uint32_t b_offset = ((store_t *)store)->write((store_t*) store, data, size);
     uint32_t expected_offset =
         b_offset + sizeof(uint32_t) + 300 * sizeof(char);
 
-    new_offset = ((store_t*)store)->cursor(store);
+    new_offset = ((store_t*)store)->cursor((store_t*) store);
 
     ASSERT(b_offset > a_offset);
     ASSERT_EQ(new_offset, expected_offset);
@@ -138,13 +138,14 @@ TEST test_basic_store() {
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
     };
 
-    uint32_t test_len = ((store_t*)store)->cursor(store);
+    uint32_t test_len = ((store_t*)store)->cursor((store_t*) store);
     ASSERT_EQ(memcmp(&expected, mapping, test_len), 0);
     PASS();
 }
 
 TEST test_out_of_bounds_read() {
-    store_cursor_t *cursor = ((store_t*)store)->open_cursor(store);
+    store_cursor_t *cursor =
+        ((store_t*)store)->open_cursor((store_t*) store);
     ASSERT_EQ(cursor->seek(cursor, SIZE + 1), OUT_OF_BOUNDS);
     ASSERT_EQ(cursor->seek(cursor, SIZE + 10), OUT_OF_BOUNDS);
     ASSERT_EQ(cursor->seek(cursor, SIZE * 2), OUT_OF_BOUNDS);

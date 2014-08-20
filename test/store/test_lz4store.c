@@ -16,7 +16,7 @@ TEST test_compress_and_store() {
     memset(data, 'A', 250);
     ASSERT(data != NULL);
 
-    uint32_t a_offset = ((store_t*)store)->write(store, data, size);
+    uint32_t a_offset = ((store_t*)store)->write((store_t*)store, data, size);
     ASSERT(a_offset > 0);
     PASS();
 }
