@@ -56,7 +56,7 @@ uint32_t _mmap_write(store_t *store, void *data, uint32_t size) {
         uint32_t remaining = mstore->capacity - cursor_pos;
 
         if (remaining <= required_size) {
-            return -1;
+            return 0;
         }
 
         new_pos = cursor_pos + required_size;
