@@ -6,11 +6,64 @@
 #include <stddef.h>
 #include <stdint.h>
 
+enum store_read_status {
+    /**
+     * The read was successful and the cursor is valid
+     */
+    SUCCESS = 0,
+
+    /**
+     * A read was attempted that consumed data that
+     * does not presently exist
+     */
+    UNDERFLOW = 1,
+
+    /**
+     * A given offset is outside of the store and
+     * cannot be serviced
+     */
+    OUT_OF_BOUNDS = 2,
+
+    /**
+     * The read has reached the logical end of
+     * available data
+     */
+    END = 3,
+
+    /**
+     * The store implementation decompresses data
+     * but is, for some reason, unable to perform
+     * this
+     */
+    DECOMPRESSION_FAULT = 4,
+
+    /**
+     * The store this cursor comes from does not allow
+     * seeks in the given direction (for example a
+     * forward only store would only allow the cursor to
+     * be moved forward)
+     */
+    INVALID_SEEK_DIRECTION = 5,
+
+    /**
+     * An attempt was made to read from an uninitialised
+     * cursor
+     */
+    UNINITIALISED_CURSOR = 6,
+
+    /**
+     * An error occured reading data (which can be
+     * consulted via errno)
+     */
+    ERROR = 7
+};
+
 typedef struct store_cursor {
     /**
-     * The store id that produced this cursor
+     * The offset where this cursor points to
+     * in the given store
      */
-    uint32_t store_id;
+    uint32_t offset;
 
     /**
      * The size of the forthcoming data
@@ -23,12 +76,24 @@ typedef struct store_cursor {
     void* data;
 
     /*
-     * Get next cursor if possible
+     * advance the cursor to the next record in the store
      *
-     * return
-     *  NULL if this cursor cannot be next
+     * return the status of moving the cursor
      */
-    struct store_cursor* (*next)(void *store_cursor_t);
+    enum store_read_status (*advance)(struct store_cursor *);
+
+    /**
+     * Seek the cursor to the given offset
+     */
+    enum store_read_status (*seek)(struct store_cursor *, uint32_t offset);
+
+    /**
+     * Destroy this cursor, this must be called
+     * to prevent memory leaks
+     *
+     * All calls after destroy are undefined
+     */
+    void (*destroy)(struct store_cursor *);
 } store_cursor_t;
 
 typedef struct store {
@@ -47,17 +112,18 @@ typedef struct store {
     uint32_t (*write)(void *store, void *data, uint32_t size);
 
     /**
-     * Get a pointer to some data at offset
+     * Create a read cursor for this store
      *
-     * params
-     *  pos - the position to seek to
+     * While databases and stores are threadsafe, cursors are
+     * not and should not be shared across threads.
+     *
+     * No check is performed to ensure this is true, using a
+     * cursor across threads is undefined.
      *
      * return
-     *  pointer to a position or
-     *  NULL - unable to seek
-     *
+     *  NULL - The cursor could not be bound / created
      */
-    store_cursor_t (*offset) (void *store, uint32_t pos);
+    store_cursor_t* (*open_cursor) (void *store);
 
     /**
      * Return remaining capacity of the store

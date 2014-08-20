@@ -21,6 +21,13 @@ struct mmap_store {
     uint32_t sync_cursor;  // MUST BE CAS GUARDED
 };
 
+struct mmap_store_cursor {
+    store_cursor_t cursor;
+    struct mmap_store *store;
+    uint32_t __padding;
+    uint32_t next_offset;
+};
+
 /*
  * Write data into the store implementation
  *
@@ -69,21 +76,79 @@ uint32_t _mmap_write(void *store, void *data, uint32_t size) {
     return cursor_pos;
 }
 
-/**
- * Get a pointer to some data at offset
- *
- * params
- *  pos - the position to seek to
- *
- * return
- *  pointer to a position or
- *  NULL - unable to seek
- *
- */
-store_cursor_t _mmap_offset(void *store, uint32_t pos) {
-    store_cursor_t to_ret;
-    return to_ret;
+enum store_read_status __mmap_cursor_position(struct mmap_store_cursor *cursor,
+                                              uint32_t offset) {
+    ensure(cursor->store != NULL, "Broken cursor");
+
+    ((store_cursor_t*)cursor)->offset = cursor->next_offset;
+
+    // For now mmap cursors are read forward only (sequential madvise)
+    // and because we want to encourage people to use the cursor
+    if (cursor->next_offset <= offset) return INVALID_SEEK_DIRECTION;
+
+    // The read is clearly out of bounds for this store
+    if (offset >= cursor->store->capacity) return OUT_OF_BOUNDS;
+
+    void *src = (cursor->store->mapping + offset);
+    uint32_t size = ((uint32_t*)src)[0];
+    if (size == 0) return END; // We have reached the synthetic end of the data
+
+    cursor->next_offset += sizeof(uint32_t) + size;
+
+    ((store_cursor_t*)cursor)->size = size;
+    ((store_cursor_t*)cursor)->data = src + sizeof(uint32_t);
+    return SUCCESS;
 }
+
+enum store_read_status _mmap_cursor_advance(store_cursor_t *cursor) {
+    struct mmap_store_cursor *mcursor = (struct mmap_store_cursor*) cursor;
+    if (mcursor->next_offset == -1) return UNINITIALISED_CURSOR;
+    ensure(mcursor->store != NULL, "Broken cursor");
+
+    enum store_read_status status = __mmap_cursor_position(mcursor,
+                                                           mcursor->next_offset);
+    switch(status) {
+        case OUT_OF_BOUNDS:
+            return END;
+        default:
+            return status;
+    }
+}
+
+enum store_read_status _mmap_cursor_seek(store_cursor_t *cursor,
+                                         uint32_t offset) {
+    return __mmap_cursor_position((struct mmap_store_cursor*) cursor, offset);
+}
+
+
+void _mmap_cursor_destroy(store_cursor_t *cursor) {
+    // TODO - Rather than deallocate, how about we return this cursor
+    // to a thread local pool ?
+
+    //struct mmap_store_cursor *mcursor = (struct mmap_store_cursor*) cursor;
+    free(cursor);
+}
+
+store_cursor_t* _mmap_open_cursor(void *store) {
+    struct mmap_store *mstore = (struct mmap_store*) store;
+    void * mapping = mstore->mapping;
+    ensure(mapping != NULL, "Bad mapping");
+
+    // TODO - We dont have to allocate one each time, we can stash a
+    // pool of these on the thread and only allocate when we have no
+    // available cursors
+    struct mmap_store_cursor *cursor = calloc(1, sizeof(struct mmap_store_cursor));
+    if (cursor == NULL) return NULL;
+
+    cursor->store = mstore;
+    cursor->next_offset = -1;
+    ((store_cursor_t*)cursor)->seek    = &_mmap_cursor_seek;
+    ((store_cursor_t*)cursor)->advance = &_mmap_cursor_advance;
+    ((store_cursor_t*)cursor)->destroy = &_mmap_cursor_destroy;
+
+    return (store_cursor_t*) cursor;
+}
+
 
 /**
  * Return remaining capacity of the store
@@ -180,13 +245,13 @@ store_t* create_mmap_store(uint32_t size, const char* base_dir, const char* name
     ensure(store->write_cursor != 0, "Cursor incorrect");
     ensure(store->sync_cursor != 0, "Cursor incorrect");
 
-    ((store_t *)store)->write    = &_mmap_write;
-    ((store_t *)store)->offset   = &_mmap_offset;
-    ((store_t *)store)->capacity = &_mmap_capacity;
-    ((store_t *)store)->cursor   = &_mmap_cursor;
-    ((store_t *)store)->sync     = &_mmap_sync;
-    ((store_t *)store)->close    = &_mmap_close;
-    ((store_t *)store)->destroy  = &_mmap_destroy;
+    ((store_t *)store)->write       = &_mmap_write;
+    ((store_t *)store)->open_cursor = &_mmap_open_cursor;
+    ((store_t *)store)->capacity    = &_mmap_capacity;
+    ((store_t *)store)->cursor      = &_mmap_cursor;
+    ((store_t *)store)->sync        = &_mmap_sync;
+    ((store_t *)store)->close       = &_mmap_close;
+    ((store_t *)store)->destroy     = &_mmap_destroy;
 
     return (store_t *)store;
 }

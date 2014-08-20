@@ -3,12 +3,21 @@
 
 #include <lz4.h>
 
+#define MAX_DECOMP_ATTEMPTS 5
+
 struct lz4_store {
     store_t store;
     store_t *underlying_store;
 };
 
-uint32_t _lz4store_write(void *store, void *data, uint32_t size) {
+struct lz4_store_cursor {
+    store_cursor_t cursor;
+    store_cursor_t *delegate;
+    uint32_t buffer_size;
+    uint32_t __padding;
+};
+
+uint32_t _lz4_store_write(void *store, void *data, uint32_t size) {
     int offset = -1;
 
     struct lz4_store *lz_store = (struct lz4_store*) store;
@@ -16,15 +25,21 @@ uint32_t _lz4store_write(void *store, void *data, uint32_t size) {
 
     // TODO - What to do if size > LZ4_MAX ?
     int compSize = LZ4_compressBound(size);
-    int storeSize = compSize + sizeof(uint32_t) + sizeof(uint32_t);
+    int storeSize = compSize + (sizeof(uint32_t) * 2);
 
     // TODO - I dont link this, it is dumb
+    // TODO - Can we avoid this allocation for small data ?
+    // .... Maybe prealloc one of these as a thread local that is
+    //  say 1-4mb (configurable) ?
+    //  with a size of less than 4mb using the pre-existing allocation
+    //  and a large one getting a heap alloc (that is play the same sort of
+    //  game that sun play in the JVM w.r.t TLABS ?)
     void *buf = calloc(1, storeSize);
     if (buf == NULL) return -1;
     ((uint32_t*)buf)[0] = compSize;
     ((uint32_t*)buf)[1] = size;
 
-    void *comp_section = buf + sizeof(uint32_t) + sizeof(uint32_t);
+    void *comp_section = buf + (sizeof(uint32_t) * 2);
     int compress_size = LZ4_compress(data, comp_section, size);
     if (compress_size == 0) goto exit;
 
@@ -40,35 +55,112 @@ exit:
     return offset;
 }
 
-/**
- * Get a pointer to some data at offset
- *
- * params
- *  pos - the position to seek to
- *
- * return
- *  pointer to a position or
- *  NULL - unable to seek
- *
- */
-store_cursor_t _lz4store_offset(void *store, uint32_t pos) {
-    store_cursor_t to_ret;
-    return to_ret;
+enum store_read_status __lz4_store_decompress(enum store_read_status status,
+                                              store_cursor_t *cursor,
+                                              struct lz4_store_cursor *lcursor,
+                                              store_cursor_t *delegate) {
+
+    if (status != SUCCESS) return status;
+
+    uint32_t compSize = ((uint32_t*)delegate->data)[0];
+    uint32_t trueSize = ((uint32_t*)delegate->data)[1];
+
+    if (lcursor->buffer_size < trueSize) {
+        void *buffer = realloc(cursor->data, trueSize);
+        if (buffer == NULL) return ERROR;
+        cursor->data = buffer;
+        lcursor->buffer_size = trueSize;
+    }
+
+    char *src = delegate->data + (sizeof(uint32_t) * 2);
+
+    for (int attempts = 0; attempts < MAX_DECOMP_ATTEMPTS; attempts++) {
+        int decompressed = LZ4_decompress_safe(src, cursor->data,
+                                               compSize, trueSize);
+        if (decompressed < trueSize) {
+            lcursor->buffer_size *= 2;
+            void *buffer = realloc(cursor->data, lcursor->buffer_size);
+            if (buffer == NULL) return ERROR;
+            cursor->data = buffer;
+        } else {
+            cursor->size = decompressed;
+            cursor->offset = delegate->offset;
+            return status;
+        }
+    }
+
+    return DECOMPRESSION_FAULT;
+}
+
+enum store_read_status _lz4_cursor_advance(store_cursor_t *cursor) {
+    struct lz4_store_cursor *lcursor = (struct lz4_store_cursor*) cursor;
+    store_cursor_t *delegate = (store_cursor_t*)lcursor->delegate;
+    return __lz4_store_decompress(delegate->advance(delegate), cursor,
+                                  lcursor, delegate);
+}
+
+enum store_read_status _lz4_cursor_seek(store_cursor_t *cursor,
+                                             uint32_t offset) {
+    struct lz4_store_cursor *lcursor = (struct lz4_store_cursor*) cursor;
+    store_cursor_t *delegate = (store_cursor_t*)lcursor->delegate;
+    return __lz4_store_decompress(delegate->seek(delegate, offset), cursor,
+                                  lcursor, delegate);
+}
+
+void _lz4_cursor_destroy(store_cursor_t *cursor) {
+    // TODO - Rather than deallocate, how about we return this cursor
+    // to a thread local pool ?
+
+    struct lz4_store_cursor *lcursor = (struct lz4_store_cursor*) cursor;
+    store_cursor_t *delegate = (store_cursor_t*)lcursor->delegate;
+    delegate->destroy(delegate);
+
+    void *data = ((store_cursor_t*)cursor)->data;
+    if (data != NULL) free(data);
+    free(cursor);
+}
+
+store_cursor_t* _lz4_store_open_cursor(void *store) {
+    struct lz4_store *lstore = (struct lz4_store*) store;
+    store_t *delegate = (store_t*) lstore->underlying_store;
+    ensure(delegate != NULL, "Bad store");
+
+    store_cursor_t *delegate_cursor = delegate->open_cursor(delegate);
+    if (delegate_cursor == NULL) return NULL;
+
+    // TODO - We dont have to allocate one each time, we can stash a
+    // pool of these on the thread and only allocate when we have no
+    // available cursors
+    struct lz4_store_cursor *cursor = calloc(1, sizeof(struct lz4_store_cursor));
+    if (cursor == NULL) return NULL;
+
+    cursor->delegate = delegate_cursor;
+    ((store_cursor_t*)cursor)->seek    = &_lz4_cursor_seek;
+    ((store_cursor_t*)cursor)->advance = &_lz4_cursor_advance;
+    ((store_cursor_t*)cursor)->destroy = &_lz4_cursor_destroy;
+
+    return (store_cursor_t*) cursor;
 }
 
 /**
  * Return remaining capacity of the store
  */
-uint32_t _lz4store_capacity(void *store) {
-    return EXIT_FAILURE;
+uint32_t _lz4_store_capacity(void *store) {
+    struct lz4_store *lstore = (struct lz4_store*) store;
+    store_t *delegate = (store_t*) lstore->underlying_store;
+    ensure(delegate != NULL, "Bad store");
+    return delegate->capacity(delegate);
 }
 
 /**
  * Return the cursor of where the store is
  * consumed up to
  */
-uint32_t _lz4store_cursor(void *store) {
-    return 0;        
+uint32_t _lz4_store_cursor(void *store) {
+    struct lz4_store *lstore = (struct lz4_store*) store;
+    store_t *delegate = (store_t*) lstore->underlying_store;
+    ensure(delegate != NULL, "Bad store");
+    return delegate->cursor(delegate);
 }
 
 /**
@@ -78,8 +170,11 @@ uint32_t _lz4store_cursor(void *store) {
  *  0 - success
  *  1 - failure 
  */
-uint32_t _lz4store_sync(void *store) {
-    return 0;
+uint32_t _lz4_store_sync(void *store) {
+    struct lz4_store *lstore = (struct lz4_store*) store;
+    store_t *delegate = (store_t*) lstore->underlying_store;
+    ensure(delegate != NULL, "Bad store");
+    return delegate->sync(delegate);
 }
 
 /**
@@ -90,8 +185,11 @@ uint32_t _lz4store_sync(void *store) {
  *  0 - success
  *  1 - failure
  */
-int _lz4store_close(void *store, bool sync) {
-    return EXIT_FAILURE;
+int _lz4_store_close(void *store, bool sync) {
+    struct lz4_store *lstore = (struct lz4_store*) store;
+    store_t *delegate = (store_t*) lstore->underlying_store;
+    ensure(delegate != NULL, "Bad store");
+    return delegate->close(delegate, sync);
 }
 
 /**
@@ -102,8 +200,14 @@ int _lz4store_close(void *store, bool sync) {
  *  0 - success
  *  1 - failure
  */
-int _lz4store_destroy(void *store) {
-    return EXIT_FAILURE;
+int _lz4_store_destroy(void *store) {
+    struct lz4_store *lstore = (struct lz4_store*) store;
+    store_t *delegate = (store_t*) lstore->underlying_store;
+    ensure(delegate != NULL, "Bad store");
+    int status = delegate->destroy(delegate);
+
+    free(lstore);
+    return status;
 }
 
 store_t* open_lz4_store(store_t *underlying_store, int flags) {
@@ -114,13 +218,13 @@ store_t* open_lz4_store(store_t *underlying_store, int flags) {
 
     store->underlying_store = underlying_store;
 
-    ((store_t *)store)->write    = &_lz4store_write;   
-    ((store_t *)store)->offset   = &_lz4store_offset;
-    ((store_t *)store)->capacity = &_lz4store_capacity;
-    ((store_t *)store)->cursor   = &_lz4store_cursor;
-    ((store_t *)store)->sync     = &_lz4store_sync;
-    ((store_t *)store)->close    = &_lz4store_close;
-    ((store_t *)store)->destroy  = &_lz4store_destroy;
+    ((store_t *)store)->write       = &_lz4_store_write;
+    ((store_t *)store)->open_cursor = &_lz4_store_open_cursor;
+    ((store_t *)store)->capacity    = &_lz4_store_capacity;
+    ((store_t *)store)->cursor      = &_lz4_store_cursor;
+    ((store_t *)store)->sync        = &_lz4_store_sync;
+    ((store_t *)store)->close       = &_lz4_store_close;
+    ((store_t *)store)->destroy     = &_lz4_store_destroy;
 
     return (store_t *)store;
 }

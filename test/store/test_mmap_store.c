@@ -143,9 +143,18 @@ TEST test_basic_store() {
     PASS();
 }
 
+TEST test_out_of_bounds_read() {
+    store_cursor_t *cursor = ((store_t*)store)->open_cursor(store);
+    ASSERT_EQ(cursor->seek(cursor, SIZE + 1), OUT_OF_BOUNDS);
+    ASSERT_EQ(cursor->seek(cursor, SIZE + 10), OUT_OF_BOUNDS);
+    ASSERT_EQ(cursor->seek(cursor, SIZE * 2), OUT_OF_BOUNDS);
+    PASS();
+}
+
 SUITE(mmap_store_suite) {
     RUN_TEST(test_size_written);
     RUN_TEST(test_basic_store);
+    RUN_TEST(test_out_of_bounds_read);
 }
 
 GREATEST_MAIN_DEFS();
