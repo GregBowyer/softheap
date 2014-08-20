@@ -11,7 +11,7 @@ ExternalProject_Add(
     #INSTALL_COMMAND ""
     BUILD_COMMAND ${MAKE})
 
-INCLUDE_DIRECTORIES(include ck/include)
+INCLUDE_DIRECTORIES(include ck/include lz4)
 
 SET(CMAKE_C_FLAGS
     # Reenable when no more unused params
