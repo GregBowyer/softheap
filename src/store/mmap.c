@@ -28,6 +28,28 @@ struct mmap_store_cursor {
     uint32_t next_offset;
 };
 
+void __mmap_schedule_store_sync(struct mmap_store *mstore, uint32_t write_cursor) {
+    // Lock free but not wait free
+    uint32_t *sync_cursor = &mstore->sync_cursor;
+    uint32_t sync_pos = ck_pr_load_32(sync_cursor);
+
+    sync_pos = ck_pr_load_32(sync_cursor);
+
+    // TODO - Add in the sync flags for allowing things like Dirty read
+    //TODO: Protect the nearest page once sunk
+    //mprotect(mapping, off, PROT_READ);
+    if (write_cursor - sync_pos > (4 * 1024)) {
+        int sync_distance = write_cursor - sync_pos;
+        msync(mstore->mapping + sync_pos, sync_distance, MS_ASYNC);
+    }
+
+    if (write_cursor - sync_pos > (64 * 1024 * 1024)) {
+        fsync(mstore->fd);
+        // Try to write the new cursor, give up if you miss the race
+        ck_pr_cas_32(sync_cursor, sync_pos, write_cursor);
+    }
+}
+
 /*
  * Write data into the store implementation
  *
@@ -72,8 +94,7 @@ uint32_t _mmap_write(store_t *store, void *data, uint32_t size) {
     dest += sizeof(uint32_t);
     memcpy(dest, data, size);
 
-    // TODO - Schedule / do a sync check
-    store->sync(store);
+    __mmap_schedule_store_sync(mstore, cursor_pos);
     return cursor_pos;
 }
 
@@ -173,21 +194,11 @@ uint32_t _mmap_cursor(store_t *store) {
  *  0 - success
  *  1 - failure 
  */
+// This lies, the write schedules the sync, this store pretends it did the
+// sync, this method might get removed
 uint32_t _mmap_sync(store_t *store) {
-    //TODO: Protect the nearest page once sunk
-    //mprotect(mapping, off, PROT_READ);
     struct mmap_store *mstore = (struct mmap_store*) store;
-
-    if (mstore->write_cursor - mstore->sync_cursor > (64 * 1024 * 1024)) {
-        fsync(mstore->fd);
-    }
-
-    if (mstore->write_cursor - mstore->sync_cursor > (4 * 1024)) {
-        int sync_distance = mstore->write_cursor - mstore->sync_cursor;
-        msync(mstore->mapping + mstore->sync_cursor, sync_distance, MS_ASYNC);
-        mstore->sync_cursor = mstore->write_cursor;
-    }
-    return 0;
+    return ck_pr_load_32(&mstore->sync_cursor);
 }
 
 /**
