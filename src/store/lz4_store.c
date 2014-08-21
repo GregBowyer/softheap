@@ -64,22 +64,22 @@ enum store_read_status __lz4_store_decompress(enum store_read_status status,
 
     if (status != SUCCESS) return status;
 
-    uint32_t compSize = ((uint32_t*)delegate->data)[0];
-    uint32_t trueSize = ((uint32_t*)delegate->data)[1];
+    uint32_t comp_size = ((uint32_t*)delegate->data)[0];
+    uint32_t true_size = ((uint32_t*)delegate->data)[1];
 
-    if (lcursor->buffer_size < trueSize) {
-        void *buffer = realloc(cursor->data, trueSize);
+    if (lcursor->buffer_size < true_size) {
+        void *buffer = realloc(cursor->data, true_size);
         if (buffer == NULL) return ERROR;
         cursor->data = buffer;
-        lcursor->buffer_size = trueSize;
+        lcursor->buffer_size = true_size;
     }
 
     char *src = delegate->data + (sizeof(uint32_t) * 2);
 
     for (int attempts = 0; attempts < MAX_DECOMP_ATTEMPTS; attempts++) {
         uint32_t decompressed = LZ4_decompress_safe(src, cursor->data,
-                                                    compSize, trueSize);
-        if (decompressed < trueSize) {
+                                                    comp_size, true_size);
+        if (decompressed < true_size) {
             lcursor->buffer_size *= 2;
             void *buffer = realloc(cursor->data, lcursor->buffer_size);
             if (buffer == NULL) return ERROR;

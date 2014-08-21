@@ -20,7 +20,7 @@ struct list_chunk {
     uint64_t new;
 
     uint64_t next;
-    uint64_t mergeBuddy: 61,
+    uint64_t merge_buddy: 61,
              freeze_state: 3;
 };
 
