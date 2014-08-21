@@ -18,14 +18,14 @@ struct lz4_store_cursor {
 };
 
 uint32_t _lz4_store_write(store_t *store, void *data, uint32_t size) {
-    int offset = -1;
+    uint32_t offset = 0;
 
     struct lz4_store *lz_store = (struct lz4_store*) store;
     store_t *delegate = lz_store->underlying_store;
 
     // TODO - What to do if size > LZ4_MAX ?
-    int compSize = LZ4_compressBound(size);
-    int storeSize = compSize + (sizeof(uint32_t) * 2);
+    int comp_buffer_size = LZ4_compressBound(size);
+    int store_size = comp_buffer_size + (sizeof(uint32_t) * 2);
 
     // TODO - I dont link this, it is dumb
     // TODO - Can we avoid this allocation for small data ?
@@ -34,16 +34,18 @@ uint32_t _lz4_store_write(store_t *store, void *data, uint32_t size) {
     //  with a size of less than 4mb using the pre-existing allocation
     //  and a large one getting a heap alloc (that is play the same sort of
     //  game that sun play in the JVM w.r.t TLABS ?)
-    void *buf = calloc(1, storeSize);
+    void *buf = calloc(1, store_size);
     if (buf == NULL) return -1;
-    ((uint32_t*)buf)[0] = compSize;
-    ((uint32_t*)buf)[1] = size;
 
     void *comp_section = buf + (sizeof(uint32_t) * 2);
     int compress_size = LZ4_compress(data, comp_section, size);
     if (compress_size == 0) goto exit;
 
-    offset = ((store_t*)delegate)->write(delegate, buf, storeSize);
+    ((uint32_t*)buf)[0] = compress_size;
+    ((uint32_t*)buf)[1] = size;
+
+    offset = delegate->write(delegate, buf, 
+                             compress_size + (sizeof(uint32_t) * 2));
     // TODO check offset for errors, it might be, for instance
     // were we unable to store due to an out-of-space in the underlying
     // store ??
@@ -75,8 +77,8 @@ enum store_read_status __lz4_store_decompress(enum store_read_status status,
     char *src = delegate->data + (sizeof(uint32_t) * 2);
 
     for (int attempts = 0; attempts < MAX_DECOMP_ATTEMPTS; attempts++) {
-        int decompressed = LZ4_decompress_safe(src, cursor->data,
-                                               compSize, trueSize);
+        uint32_t decompressed = LZ4_decompress_safe(src, cursor->data,
+                                                    compSize, trueSize);
         if (decompressed < trueSize) {
             lcursor->buffer_size *= 2;
             void *buffer = realloc(cursor->data, lcursor->buffer_size);

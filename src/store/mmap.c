@@ -73,18 +73,13 @@ uint32_t _mmap_write(store_t *store, void *data, uint32_t size) {
     memcpy(dest, data, size);
 
     // TODO - Schedule / do a sync check
+    store->sync(store);
     return cursor_pos;
 }
 
 enum store_read_status __mmap_cursor_position(struct mmap_store_cursor *cursor,
                                               uint32_t offset) {
     ensure(cursor->store != NULL, "Broken cursor");
-
-    ((store_cursor_t*)cursor)->offset = cursor->next_offset;
-
-    // For now mmap cursors are read forward only (sequential madvise)
-    // and because we want to encourage people to use the cursor
-    if (cursor->next_offset <= offset) return INVALID_SEEK_DIRECTION;
 
     // The read is clearly out of bounds for this store
     if (offset >= cursor->store->capacity) return OUT_OF_BOUNDS;
@@ -93,7 +88,12 @@ enum store_read_status __mmap_cursor_position(struct mmap_store_cursor *cursor,
     uint32_t size = ((uint32_t*)src)[0];
     if (size == 0) return END; // We have reached the synthetic end of the data
 
-    cursor->next_offset += sizeof(uint32_t) + size;
+    cursor->next_offset = (offset + sizeof(uint32_t) + size);
+    ((store_cursor_t*)cursor)->offset = offset;
+
+    // For now mmap cursors are read forward only (sequential madvise)
+    // and because we want to encourage people to use the cursor
+    if (cursor->next_offset <= offset) return INVALID_SEEK_DIRECTION;
 
     ((store_cursor_t*)cursor)->size = size;
     ((store_cursor_t*)cursor)->data = src + sizeof(uint32_t);
@@ -102,7 +102,7 @@ enum store_read_status __mmap_cursor_position(struct mmap_store_cursor *cursor,
 
 enum store_read_status _mmap_cursor_advance(store_cursor_t *cursor) {
     struct mmap_store_cursor *mcursor = (struct mmap_store_cursor*) cursor;
-    if (mcursor->next_offset == -1) return UNINITIALISED_CURSOR;
+    if (mcursor->next_offset == 0) return UNINITIALISED_CURSOR;
     ensure(mcursor->store != NULL, "Broken cursor");
 
     enum store_read_status status = __mmap_cursor_position(mcursor,
@@ -141,7 +141,7 @@ store_cursor_t* _mmap_open_cursor(store_t *store) {
     if (cursor == NULL) return NULL;
 
     cursor->store = mstore;
-    cursor->next_offset = -1;
+    cursor->next_offset = 0;
     ((store_cursor_t*)cursor)->seek    = &_mmap_cursor_seek;
     ((store_cursor_t*)cursor)->advance = &_mmap_cursor_advance;
     ((store_cursor_t*)cursor)->destroy = &_mmap_cursor_destroy;
@@ -176,6 +176,17 @@ uint32_t _mmap_cursor(store_t *store) {
 uint32_t _mmap_sync(store_t *store) {
     //TODO: Protect the nearest page once sunk
     //mprotect(mapping, off, PROT_READ);
+    struct mmap_store *mstore = (struct mmap_store*) store;
+
+    if (mstore->write_cursor - mstore->sync_cursor > (64 * 1024 * 1024)) {
+        fsync(mstore->fd);
+    }
+
+    if (mstore->write_cursor - mstore->sync_cursor > (4 * 1024)) {
+        int sync_distance = mstore->write_cursor - mstore->sync_cursor;
+        msync(mstore->mapping + mstore->sync_cursor, sync_distance, MS_ASYNC);
+        mstore->sync_cursor = mstore->write_cursor;
+    }
     return 0;
 }
 
@@ -226,8 +237,11 @@ store_t* create_mmap_store(uint32_t size, const char* base_dir, const char* name
     struct mmap_store *store = (struct mmap_store*) calloc(1, sizeof(struct mmap_store));
     if (store == NULL) return NULL;
 
-    void *mapping = mmap(NULL, (size_t) size, PROT_READ | PROT_WRITE, MAP_SHARED, real_fd, 0);
+    void *mapping = mmap(NULL, (size_t) size, PROT_READ | PROT_WRITE, 
+            MAP_SHARED | MAP_POPULATE | MAP_NONBLOCK , real_fd, 0);
     if (mapping == NULL) return NULL;
+
+    madvise(mapping, size, MADV_SEQUENTIAL);
 
     uint32_t off = sizeof(uint32_t) * 2;
     ((uint32_t *)mapping)[0] = 0xDEADBEEF;

@@ -57,5 +57,6 @@ TARGET_LINK_LIBRARIES(softheap-static
 
 ADD_SUBDIRECTORY(test)
 ENABLE_TESTING()
-ADD_TEST(NAME test_mmap_store COMMAND test_mmap_store)
 ADD_TEST(NAME test_lz4_store COMMAND test_lz4_store)
+ADD_TEST(NAME test_mmap_store COMMAND test_mmap_store)
+ADD_TEST(NAME test_store_threaded COMMAND test_store_threaded)

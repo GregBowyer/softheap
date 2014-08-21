@@ -11,12 +11,16 @@ ADD_LIBRARY(theft
     theft/theft_mt.c
 )
 SET_TARGET_PROPERTIES(theft
-    PROPERTIES COMPILE_FLAGS "-Wno-format -Wno-parentheses")
+    PROPERTIES COMPILE_FLAGS "-g -Wno-format -Wno-parentheses")
 
 ADD_EXECUTABLE(test_mmap_store store/test_mmap_store.c)
 ADD_DEPENDENCIES(test_mmap_store softheap-static)
 TARGET_LINK_LIBRARIES(test_mmap_store theft softheap-static) 
 
+ADD_EXECUTABLE(test_store_threaded store/test_store_threaded.c)
+ADD_DEPENDENCIES(test_store_threaded softheap-static)
+TARGET_LINK_LIBRARIES(test_store_threaded theft softheap-static pthread rt)
+
 ADD_EXECUTABLE(test_lz4_store store/test_lz4store.c)
 ADD_DEPENDENCIES(test_lz4_store softheap-static)
-TARGET_LINK_LIBRARIES(test_lz4_store theft softheap-static)
+TARGET_LINK_LIBRARIES(test_lz4_store theft softheap-static pthread rt)
