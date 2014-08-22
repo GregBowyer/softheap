@@ -223,7 +223,20 @@ int _mmap_close(store_t *store, bool sync) {
  *  1 - failure
  */
 int _mmap_destroy(store_t *store) {
-    return EXIT_FAILURE;
+    struct mmap_store *mstore = (struct mmap_store*) store;
+    void * mapping = mstore->mapping;
+    ensure(mapping != NULL, "Bad mapping");
+
+    // TODO: Should I actually unlink the file?  I think I need the filename to do that, which isn't
+    // currently saved in the store.
+    int ret = close(mstore->fd);
+    ensure(ret == 0, "Failed to close mmaped file");
+
+    ret = munmap(mstore->mapping, mstore->capacity);
+    ensure(ret == 0, "Failed to munmap mmaped file");
+
+    free(mstore);
+    return EXIT_SUCCESS;
 }
 
 store_t* create_mmap_store(uint32_t size, const char* base_dir, const char* name, int flags) {
