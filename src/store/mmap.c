@@ -108,6 +108,7 @@ enum store_read_status __mmap_cursor_position(struct mmap_store_cursor *cursor,
     void *src = (cursor->store->mapping + offset);
     uint32_t size = ((uint32_t*)src)[0];
     if (size == 0) return END; // We have reached the synthetic end of the data
+    ensure(offset + size + sizeof(uint32_t) < cursor->store->capacity, "Found a block that runs over the end of our store");
 
     cursor->next_offset = (offset + sizeof(uint32_t) + size);
     ((store_cursor_t*)cursor)->offset = offset;
