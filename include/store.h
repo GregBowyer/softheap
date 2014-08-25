@@ -52,10 +52,16 @@ enum store_read_status {
     UNINITIALISED_CURSOR = 6,
 
     /**
+     * An attempt was made to read from a store that has
+     * not been synced
+     */
+    UNSYNCED_STORE = 7,
+
+    /**
      * An error occured reading data (which can be
      * consulted via errno)
      */
-    ERROR = 7
+    ERROR = 8
 };
 
 typedef struct store_cursor {
@@ -96,10 +102,25 @@ typedef struct store_cursor {
     void (*destroy)(struct store_cursor *);
 } store_cursor_t;
 
+
+/**
+ * A configurable fixed size append only storage block that can be persisted to disk.
+ *
+ * Theory of operation:
+ *
+ * Multiple writers are allowed to the store.  While there are still writers, a sync is not allowed.
+ * This is to avoid the problem of partial syncs, where incomplete writes are written to disk.
+ *
+ * After a sync starts, writers are no longer allowed, and the write call will fail.
+ *
+ * After a sync completes, readers are allowed to read from the store after a sync completes, but
+ * not before.  Multiple readers are allowed simultaneously with no synchronization, besides
+ * checking that the sync has completed.
+ */
 typedef struct store {
 
     /*
-     * Write data into the store implementation
+     * Write data into the store implementation.  This call will failed after a sync has started.
      *
      * params
      *  *data - data to write
@@ -146,7 +167,7 @@ typedef struct store {
     uint32_t (*start_cursor) (struct store *);
 
     /**
-     * Force this store to sync if needed
+     * Sync this store to disk.  This call will fail if writes are in flight.
      *
      * return
      *   Position where the cursor is synced to

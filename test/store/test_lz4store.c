@@ -33,6 +33,9 @@ TEST test_basic_store() {
     // Fill the store (TODO: Fix the error reporting in this function)
     while(((store_t *)store)->write((store_t*) store, data, 300 * sizeof(char)) != 0);
 
+    // Sync the store so we can read from it
+    ASSERT_EQ(((store_t *)store)->sync((store_t*) store), 0);
+
     store_cursor_t *cursor = ((store_t*) store)->open_cursor((store_t*)store);
     ASSERT(cursor != NULL);
 

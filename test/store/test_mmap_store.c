@@ -58,8 +58,12 @@ TEST test_basic_store() {
     ASSERT_EQ((sizeof(char) * 250) + sizeof(uint32_t) + curr_offset, new_offset);
 
     memset(data, 'B', 300 * sizeof(char));
-    // Fill the store
+
+    // Fill the store (TODO: Fix the error reporting in this function)
     while(((store_t *)store)->write((store_t*) store, data, 300 * sizeof(char)) != 0);
+
+    // Sync the store so we can read from it
+    ASSERT_EQ(((store_t *)store)->sync((store_t*) store), 0);
 
     store_cursor_t *cursor = ((store_t*) store)->open_cursor((store_t*)store);
     ASSERT(cursor != NULL);

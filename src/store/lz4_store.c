@@ -52,7 +52,6 @@ uint32_t _lz4_store_write(store_t *store, void *data, uint32_t size) {
 
 exit:
     // HACK FOR NOW
-    ((store_t*)delegate)->sync(delegate);
     free(buf);
     return offset;
 }
