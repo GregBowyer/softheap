@@ -190,6 +190,15 @@ uint32_t _mmap_cursor(store_t *store) {
 }
 
 /**
+ * Return the cursor to the beginning of this store
+ */
+uint32_t _mmap_start_cursor(store_t *store) {
+    // There are 64 bits of metadata at the beginning of the store
+    // TODO: Make an mmap store header struct so these constants aren't hard coded everywhere
+    return sizeof(uint32_t) * 2;
+}
+
+/**
  * Force this store to sync if needed
  *
  * return
@@ -299,13 +308,14 @@ store_t* create_mmap_store(uint32_t size, const char* base_dir, const char* name
     ensure(store->write_cursor != 0, "Cursor incorrect");
     ensure(store->sync_cursor != 0, "Cursor incorrect");
 
-    ((store_t *)store)->write       = &_mmap_write;
-    ((store_t *)store)->open_cursor = &_mmap_open_cursor;
-    ((store_t *)store)->capacity    = &_mmap_capacity;
-    ((store_t *)store)->cursor      = &_mmap_cursor;
-    ((store_t *)store)->sync        = &_mmap_sync;
-    ((store_t *)store)->close       = &_mmap_close;
-    ((store_t *)store)->destroy     = &_mmap_destroy;
+    ((store_t *)store)->write        = &_mmap_write;
+    ((store_t *)store)->open_cursor  = &_mmap_open_cursor;
+    ((store_t *)store)->capacity     = &_mmap_capacity;
+    ((store_t *)store)->cursor       = &_mmap_cursor;
+    ((store_t *)store)->start_cursor = &_mmap_start_cursor;
+    ((store_t *)store)->sync         = &_mmap_sync;
+    ((store_t *)store)->close        = &_mmap_close;
+    ((store_t *)store)->destroy      = &_mmap_destroy;
 
     return (store_t *)store;
 }

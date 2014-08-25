@@ -166,6 +166,16 @@ uint32_t _lz4_store_cursor(store_t *store) {
 }
 
 /**
+ * Return the cursor to the beginning of this store
+ */
+uint32_t _lz4_store_start_cursor(store_t *store) {
+    struct lz4_store *lstore = (struct lz4_store*) store;
+    store_t *delegate = (store_t*) lstore->underlying_store;
+    ensure(delegate != NULL, "Bad store");
+    return delegate->start_cursor(delegate);
+}
+
+/**
  * Force this store to sync if needed
  *
  * return
@@ -220,13 +230,14 @@ store_t* open_lz4_store(store_t *underlying_store, int flags) {
 
     store->underlying_store = underlying_store;
 
-    ((store_t *)store)->write       = &_lz4_store_write;
-    ((store_t *)store)->open_cursor = &_lz4_store_open_cursor;
-    ((store_t *)store)->capacity    = &_lz4_store_capacity;
-    ((store_t *)store)->cursor      = &_lz4_store_cursor;
-    ((store_t *)store)->sync        = &_lz4_store_sync;
-    ((store_t *)store)->close       = &_lz4_store_close;
-    ((store_t *)store)->destroy     = &_lz4_store_destroy;
+    ((store_t *)store)->write        = &_lz4_store_write;
+    ((store_t *)store)->open_cursor  = &_lz4_store_open_cursor;
+    ((store_t *)store)->capacity     = &_lz4_store_capacity;
+    ((store_t *)store)->cursor       = &_lz4_store_cursor;
+    ((store_t *)store)->start_cursor = &_lz4_store_start_cursor;
+    ((store_t *)store)->sync         = &_lz4_store_sync;
+    ((store_t *)store)->close        = &_lz4_store_close;
+    ((store_t *)store)->destroy      = &_lz4_store_destroy;
 
     return (store_t *)store;
 }

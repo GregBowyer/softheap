@@ -141,6 +141,11 @@ typedef struct store {
     uint32_t (*cursor) (struct store *);
 
     /**
+     * Return the cursor to the beginning of this store
+     */
+    uint32_t (*start_cursor) (struct store *);
+
+    /**
      * Force this store to sync if needed
      *
      * return
