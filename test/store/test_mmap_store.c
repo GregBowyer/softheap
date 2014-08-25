@@ -19,14 +19,28 @@ static struct mmap_store *store;
 static const uint32_t SIZE = 1024 * 1024 * 64;
 
 TEST test_size_written() {
+
+    // Allocate the store
+    store = (struct mmap_store*) create_mmap_store(SIZE, ".", "test_store.str", DELETE_IF_EXISTS);
+    ASSERT(store != NULL);
+
     // Break encapsulation (naughty naughty)
     uint32_t *store_as_ints = (uint32_t*) store->mapping;
     ASSERT_EQ(0xDEADBEEF, store_as_ints[0]);
     ASSERT_EQ(SIZE, store_as_ints[1]);
+
+    // Cleanup
+    ((store_t*)store)->destroy((store_t*) store);
+
     PASS();
 }
 
 TEST test_basic_store() {
+
+    // Allocate the store
+    store = (struct mmap_store*) create_mmap_store(SIZE, ".", "test_store.str", DELETE_IF_EXISTS);
+    ASSERT(store != NULL);
+
     char *data = (char*) calloc(300, sizeof(char));
     ASSERT(data != NULL);
     memset(data, 'A', 250);
@@ -63,16 +77,25 @@ TEST test_basic_store() {
     }
 
     ASSERT_EQ(status, END);
+
+    // Cleanup
+    ((store_t*)store)->destroy((store_t*) store);
+
     PASS();
 }
 
 TEST test_actual_mapping() {
+
+    // Allocate the store
+    store = (struct mmap_store*) create_mmap_store(SIZE, ".", "test_store.str", DELETE_IF_EXISTS);
+    ASSERT(store != NULL);
+
     char *data = (char*) calloc(300, sizeof(char));
     ASSERT(data != NULL);
     memset(data, 'A', 250);
 
-    struct mmap_store* store2 = 
-        (struct mmap_store*) create_mmap_store(600, ".", "test_store2.str", 0);
+    struct mmap_store* store2 =
+        (struct mmap_store*) create_mmap_store(600, ".", "test_store2.str", DELETE_IF_EXISTS);
 
     ((store_t*)store2)->write((store_t*) store2, data, 250);
     memset(data, 'B', 300);
@@ -161,15 +184,31 @@ TEST test_actual_mapping() {
 
     ASSERT_EQ(memcmp(&expected, mapping, 600), 0);
     free(data);
+
+    // Cleanup
+    ((store_t*)store)->destroy((store_t*) store);
+
     PASS();
 }
 
 TEST test_out_of_bounds_read() {
-    store_cursor_t *cursor = 
+
+    // Allocate the store
+    store = (struct mmap_store*) create_mmap_store(SIZE, ".", "test_store.str", DELETE_IF_EXISTS);
+    ASSERT(store != NULL);
+
+    // Sync the store (sync nothing, but we need to do this for reads to be allowed)
+    ASSERT_EQ(((store_t*)store)->sync((store_t*) store), 0);
+
+    store_cursor_t *cursor =
         ((store_t*)store)->open_cursor((store_t*) store);
     ASSERT_EQ(cursor->seek(cursor, SIZE + 1), OUT_OF_BOUNDS);
     ASSERT_EQ(cursor->seek(cursor, SIZE + 10), OUT_OF_BOUNDS);
     ASSERT_EQ(cursor->seek(cursor, SIZE * 2), OUT_OF_BOUNDS);
+
+    // Cleanup
+    ((store_t*)store)->destroy((store_t*) store);
+
     PASS();
 }
 
@@ -184,8 +223,6 @@ GREATEST_MAIN_DEFS();
 
 int main(int argc, char **argv) {
     GREATEST_MAIN_BEGIN();
-    store = (struct mmap_store*) create_mmap_store(SIZE, ".", "test_store.str", 0);
-    ASSERT(store != NULL);
     RUN_SUITE(mmap_store_suite);
     GREATEST_MAIN_END();
 }

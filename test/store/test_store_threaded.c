@@ -119,7 +119,7 @@ GREATEST_MAIN_DEFS();
 
 int main(int argc, char **argv) {
     GREATEST_MAIN_BEGIN();
-    store_t *delegate = create_mmap_store(SIZE, ".", "test_threaded.str", 0);
+    store_t *delegate = create_mmap_store(SIZE, ".", "test_threaded.str", DELETE_IF_EXISTS);
     ASSERT(delegate != NULL);
     store = open_lz4_store(delegate, 0);
     ASSERT(store != NULL);

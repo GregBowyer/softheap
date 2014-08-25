@@ -4,6 +4,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include <sys/mman.h>
 #include <string.h>
@@ -247,12 +248,26 @@ store_t* create_mmap_store(uint32_t size, const char* base_dir, const char* name
     int dir_fd = open(base_dir, O_DIRECTORY, (mode_t)0600);
     if (dir_fd == -1) return NULL;
 
-    int real_fd = openat(dir_fd, name, O_RDWR | O_CREAT, (mode_t)0600);
+    int openat_flags = O_RDWR | O_CREAT;
+
+    if (flags & DELETE_IF_EXISTS) {
+        openat_flags = openat_flags | O_TRUNC;
+    }
+    else {
+        openat_flags = openat_flags | O_EXCL;
+    }
+
+    int real_fd = openat(dir_fd, name, openat_flags, (mode_t)0600);
     close(dir_fd);
 
     // TODO - Check for the race condition if two people attempt to create
     // the same segment
-    if (real_fd == -1) return NULL;
+    if (real_fd == -1) {
+        // TODO: This is a terrible hack.  We need to fix the error handling, but for now, actually
+        // warn us if we are failing because of loading a garbage file.
+        ensure(errno != EEXIST, "Failed to create mmap store because file already exists");
+        return NULL;
+    }
 
     if (posix_fallocate(real_fd, 0, size) != 0) {
         close(real_fd);

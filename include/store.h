@@ -170,6 +170,9 @@ typedef struct store {
     int (*destroy) (struct store *);
 } store_t;
 
+// Flags for store creation
+#define DELETE_IF_EXISTS 0x0001
+
 store_t* create_mmap_store(uint32_t size, const char* base_dir,
                            const char* name, int flags);
 store_t* open_mmap_store(const char* base_dir, const char* name, int flags);
