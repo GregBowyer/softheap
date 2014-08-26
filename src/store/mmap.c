@@ -261,7 +261,19 @@ uint32_t _mmap_sync(store_t *store) {
  *  1 - failure
  */
 int _mmap_close(store_t *store, bool sync) {
-    return EXIT_FAILURE;
+    struct mmap_store *mstore = (struct mmap_store*) store;
+    void * mapping = mstore->mapping;
+    ensure(mapping != NULL, "Bad mapping");
+
+    // TODO: Actually unlink the file
+    int ret = close(mstore->fd);
+    ensure(ret == 0, "Failed to close mmaped file");
+
+    ret = munmap(mstore->mapping, mstore->capacity);
+    ensure(ret == 0, "Failed to munmap mmaped file");
+
+    free(mstore);
+    return EXIT_SUCCESS;
 }
 
 /**
@@ -277,8 +289,7 @@ int _mmap_destroy(store_t *store) {
     void * mapping = mstore->mapping;
     ensure(mapping != NULL, "Bad mapping");
 
-    // TODO: Should I actually unlink the file?  I think I need the filename to do that, which isn't
-    // currently saved in the store.
+    // TODO: Actually unlink the file
     int ret = close(mstore->fd);
     ensure(ret == 0, "Failed to close mmaped file");
 
@@ -362,5 +373,57 @@ store_t* create_mmap_store(uint32_t size, const char* base_dir, const char* name
 }
 
 store_t* open_mmap_store(const char* base_dir, const char* name, int flags) {
-    return NULL;
+    int dir_fd = open(base_dir, O_DIRECTORY, (mode_t)0600);
+    if (dir_fd == -1) return NULL;
+
+    int real_fd = openat(dir_fd, name, O_RDWR, (mode_t)0600);
+    ensure(real_fd > 0, "Failed to open mmap store file");
+    close(dir_fd);
+
+    struct stat sb;
+    int ret = fstat(real_fd, &sb);
+    ensure(ret != -1, "Failed to fstat file");
+    int size = sb.st_size;
+
+    // This is nearly identical to the create_mmap_store.  Maybe should make an "init mmap store" or
+    // something?
+    struct mmap_store *store = (struct mmap_store*) calloc(1, sizeof(struct mmap_store));
+    if (store == NULL) return NULL;
+
+    void *mapping = mmap(NULL, (size_t) size, PROT_READ | PROT_WRITE,
+            MAP_SHARED | MAP_POPULATE | MAP_NONBLOCK , real_fd, 0);
+    if (mapping == NULL) return NULL;
+
+    madvise(mapping, size, MADV_SEQUENTIAL);
+
+    uint32_t off = sizeof(uint32_t) * 2;
+    ensure(((uint32_t *)mapping)[0] == 0xDEADBEEF, "Magic number does not match.  Bad file format");
+    ensure(((uint32_t *)mapping)[1] == size, "Size recorded does not match file size.  Bad file format");
+
+    store->fd = real_fd;
+    store->capacity = size;
+    store->flags = flags;
+    store->mapping = mapping;
+
+    // These don't really matter because writers aren't allowed...
+    ck_pr_store_32(&store->write_cursor, off);
+    ck_pr_store_32(&store->writers, 0);
+
+    // We infer that this store has been synced...
+    ck_pr_store_32(&store->syncing, 1);
+    ck_pr_store_32(&store->synced, 1);
+    ck_pr_fence_atomic();
+    ensure(msync(mapping, off, MS_SYNC) == 0, "Unable to sync");
+    ensure(store->write_cursor != 0, "Cursor incorrect");
+
+    ((store_t *)store)->write        = &_mmap_write;
+    ((store_t *)store)->open_cursor  = &_mmap_open_cursor;
+    ((store_t *)store)->capacity     = &_mmap_capacity;
+    ((store_t *)store)->cursor       = &_mmap_cursor;
+    ((store_t *)store)->start_cursor = &_mmap_start_cursor;
+    ((store_t *)store)->sync         = &_mmap_sync;
+    ((store_t *)store)->close        = &_mmap_close;
+    ((store_t *)store)->destroy      = &_mmap_destroy;
+
+    return (store_t *)store;
 }

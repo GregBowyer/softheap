@@ -216,11 +216,72 @@ TEST test_out_of_bounds_read() {
     PASS();
 }
 
+TEST test_store_persistence() {
+
+    // Allocate the store
+    store = (struct mmap_store*) create_mmap_store(SIZE, ".", "test_store.str", DELETE_IF_EXISTS);
+    ASSERT(store != NULL);
+
+    char *data = (char*) calloc(300, sizeof(char));
+    ASSERT(data != NULL);
+    memset(data, 'A', 250);
+
+    uint32_t curr_offset = ((store_t*)store)->cursor((store_t*) store);
+    ASSERT(curr_offset == sizeof(uint32_t) * 2);
+
+    uint32_t a_offset = ((store_t*)store)->write((store_t*) store, data, sizeof(char) * 250);
+    ASSERT(a_offset > 0);
+    ASSERT_EQ(curr_offset, a_offset);
+
+    uint32_t new_offset = ((store_t*)store)->cursor((store_t*) store);
+    // There is one uint32 at the start of the store
+    // anything else is the offset + stuff
+    ASSERT_EQ((sizeof(char) * 250) + sizeof(uint32_t) + curr_offset, new_offset);
+
+    memset(data, 'B', 300 * sizeof(char));
+
+    // Fill the store (TODO: Fix the error reporting in this function)
+    while(((store_t *)store)->write((store_t*) store, data, 300 * sizeof(char)) != 0);
+
+    // Sync the store
+    ASSERT_EQ(((store_t *)store)->sync((store_t*) store), 0);
+
+    // Close the store
+    ASSERT_EQ(((store_t *)store)->close((store_t*) store, 0), 0);
+
+    // Reopen the store
+    store = (struct mmap_store*) open_mmap_store(".", "test_store.str", 0);
+    ASSERT(store != NULL);
+
+    store_cursor_t *cursor = ((store_t*) store)->open_cursor((store_t*)store);
+    ASSERT(cursor != NULL);
+
+    enum store_read_status status = cursor->seek(cursor, a_offset);
+    ASSERT_EQ(cursor->size, 250 * sizeof(char));
+    ASSERT_EQ(status, SUCCESS);
+    status = cursor->advance(cursor);
+    ASSERT_EQ(status, SUCCESS);
+
+    while (status == SUCCESS) {
+        ASSERT_EQ(cursor->size, 300 * sizeof(char));
+        ASSERT_EQ(memcmp(data, cursor->data, 300), 0);
+        status = cursor->advance(cursor);
+    }
+
+    ASSERT_EQ(status, END);
+
+    // Cleanup
+    ((store_t*)store)->destroy((store_t*) store);
+
+    PASS();
+}
+
 SUITE(mmap_store_suite) {
     RUN_TEST(test_size_written);
     RUN_TEST(test_basic_store);
     RUN_TEST(test_out_of_bounds_read);
     RUN_TEST(test_actual_mapping);
+    RUN_TEST(test_store_persistence);
 }
 
 GREATEST_MAIN_DEFS();
