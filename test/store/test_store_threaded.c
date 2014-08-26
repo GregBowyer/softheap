@@ -12,7 +12,7 @@ static store_t *store;
 //static const uint32_t SIZE = UINT32_MAX;
 static const uint32_t SIZE = (1024 * 1024 * 512);
 
-static uint32_t lowest_offset = 0;
+static uint32_t lowest_offset = UINT32_MAX;
 static uint64_t total_count = 0;
 
 void * write(void* id) {
@@ -29,6 +29,7 @@ void * write(void* id) {
     uint32_t lowest_value = UINT32_MAX;
     int i = 0;
 
+    // Fill the store (TODO: Fix the error reporting in this function)
     while(offset != 0) {
         count += size;
         offset = ((store_t *)store)->write((store_t*) store, data, size);
@@ -45,6 +46,11 @@ void * write(void* id) {
         }
         offsets[i++] = offset;
     }
+
+    // For now, just have every thread sync to be safe
+    // TODO: when we have more specific error messages, just attempt to seek until the store has
+    // been synced.
+    while (((store_t *)store)->sync((store_t*) store) != 0);
 
     store_cursor_t *cursor = store->open_cursor(store);
     ensure(cursor != NULL, "Bad cursor");
@@ -95,6 +101,12 @@ TEST threaded_store_test() {
     printf("MB processed and stored: %" PRIu64 "\n", 
             ((ck_pr_load_64(&total_count) / 1024) / 1024));
 
+    // Sync the store so we know we can read from it
+    // TODO: Maybe we should have a function to test if a store has already been synced.  This
+    // function could just be a noop in that case, but having a dedicated function may be faster by
+    // avoiding some synchronization.
+    ensure(((store_t *)store)->sync((store_t*) store) == 0, "Failed to sync");
+
     // Double check that a single sequential read cursor does the right
     // thing w.r.t ending
     
@@ -119,7 +131,7 @@ GREATEST_MAIN_DEFS();
 
 int main(int argc, char **argv) {
     GREATEST_MAIN_BEGIN();
-    store_t *delegate = create_mmap_store(SIZE, ".", "test_threaded.str", 0);
+    store_t *delegate = create_mmap_store(SIZE, ".", "test_threaded.str", DELETE_IF_EXISTS);
     ASSERT(delegate != NULL);
     store = open_lz4_store(delegate, 0);
     ASSERT(store != NULL);
