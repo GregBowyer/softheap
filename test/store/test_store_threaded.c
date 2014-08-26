@@ -12,7 +12,7 @@ static store_t *store;
 //static const uint32_t SIZE = UINT32_MAX;
 static const uint32_t SIZE = (1024 * 1024 * 512);
 
-static uint32_t lowest_offset = 0;
+static uint32_t lowest_offset = UINT32_MAX;
 static uint64_t total_count = 0;
 
 void * write(void* id) {
