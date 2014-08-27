@@ -15,9 +15,9 @@ struct mmap_store {
     int fd;
     int flags;
     void* mapping;
-    uint32_t __padding;
     uint32_t capacity;
 
+    uint32_t read_cursor;  // MUST BE CAS GUARDED
     uint32_t write_cursor; // MUST BE CAS GUARDED
 
     uint32_t writers;
@@ -182,6 +182,76 @@ store_cursor_t* _mmap_open_cursor(store_t *store) {
     ((store_cursor_t*)cursor)->destroy = &_mmap_cursor_destroy;
 
     return (store_cursor_t*) cursor;
+}
+
+store_cursor_t* _mmap_pop_cursor(store_t *store) {
+
+    // This is really an mmap store
+    struct mmap_store *mstore = (struct mmap_store*) store;
+
+    // Open a blank cursor
+    struct mmap_store_cursor* cursor = (struct mmap_store_cursor*) _mmap_open_cursor(store);
+
+    // Save the current offset so we can try to CAS later
+    uint32_t current_offset = ck_pr_load_32(&mstore->read_cursor);
+
+    // If the first cursor has not been returned, don't advance.  Instead seek to the beginning.
+    if (current_offset == -1) {
+
+        uint32_t next_offset = store->start_cursor(store);
+
+        // Seek to the read offset
+        enum store_read_status ret = _mmap_cursor_seek((store_cursor_t*) cursor, next_offset);
+        ensure(ret == SUCCESS, "Failed to seek");
+
+        // Set the read cursor.  Note we are setting it to the offset of the thing we are reading,
+        // because of the logic below
+        if (ck_pr_cas_32(&mstore->read_cursor, current_offset, next_offset)) {
+            return (store_cursor_t*) cursor;
+        }
+
+        // If we failed to CAS, reload the current offset and drop down to the normal logic below
+        current_offset = ck_pr_load_32(&mstore->read_cursor);
+    }
+
+    // Seek to the current read offset
+    enum store_read_status ret = _mmap_cursor_seek((store_cursor_t*) cursor, current_offset);
+    ensure(ret == SUCCESS, "Failed to seek");
+
+    // Save our offset so we can try to CAS
+    uint32_t next_offset = cursor->next_offset;
+
+    // This is our only way to advance, so we have to do this
+    ret = _mmap_cursor_advance((store_cursor_t*) cursor);
+    ensure(ret == SUCCESS || ret == END, "Failed to advance");
+
+    // If we advanced successfully, try to CAS the read cursor
+    while (ret != END) {
+
+        // If we succeed, return the cursor we made
+        if (ck_pr_cas_32(&mstore->read_cursor, current_offset, next_offset)) {
+            return (store_cursor_t*) cursor;
+        }
+
+        // Otherwise, try again
+
+        // Save the current offset so we can try to CAS later
+        current_offset = ck_pr_load_32(&mstore->read_cursor);
+
+        // Seek to the current read offset
+        ret = _mmap_cursor_seek((store_cursor_t*) cursor, current_offset);
+        ensure(ret == SUCCESS, "Failed to seek");
+
+        // Save our offset so we can try to CAS
+        next_offset = cursor->next_offset;
+
+        // This is our only way to advance, so we have to do this
+        ret = _mmap_cursor_advance((store_cursor_t*) cursor);
+        ensure(ret == SUCCESS || ret == END, "Failed to advance");
+    }
+
+    ((store_cursor_t*) cursor)->destroy((store_cursor_t*) cursor);
+    return NULL;
 }
 
 
@@ -353,6 +423,7 @@ store_t* create_mmap_store(uint32_t size, const char* base_dir, const char* name
     store->mapping = mapping;
 
     ck_pr_store_32(&store->write_cursor, off);
+    ck_pr_store_32(&store->read_cursor, -1);
     ck_pr_store_32(&store->writers, 0);
     ck_pr_store_32(&store->syncing, 0);
     ck_pr_store_32(&store->synced, 0);
@@ -362,6 +433,7 @@ store_t* create_mmap_store(uint32_t size, const char* base_dir, const char* name
 
     ((store_t *)store)->write        = &_mmap_write;
     ((store_t *)store)->open_cursor  = &_mmap_open_cursor;
+    ((store_t *)store)->pop_cursor   = &_mmap_pop_cursor;
     ((store_t *)store)->capacity     = &_mmap_capacity;
     ((store_t *)store)->cursor       = &_mmap_cursor;
     ((store_t *)store)->start_cursor = &_mmap_start_cursor;
@@ -407,6 +479,7 @@ store_t* open_mmap_store(const char* base_dir, const char* name, int flags) {
 
     // These don't really matter because writers aren't allowed...
     ck_pr_store_32(&store->write_cursor, off);
+    ck_pr_store_32(&store->read_cursor, -1);
     ck_pr_store_32(&store->writers, 0);
 
     // We infer that this store has been synced...
@@ -418,6 +491,7 @@ store_t* open_mmap_store(const char* base_dir, const char* name, int flags) {
 
     ((store_t *)store)->write        = &_mmap_write;
     ((store_t *)store)->open_cursor  = &_mmap_open_cursor;
+    ((store_t *)store)->pop_cursor   = &_mmap_pop_cursor;
     ((store_t *)store)->capacity     = &_mmap_capacity;
     ((store_t *)store)->cursor       = &_mmap_cursor;
     ((store_t *)store)->start_cursor = &_mmap_start_cursor;

@@ -143,6 +143,33 @@ store_cursor_t* _lz4_store_open_cursor(store_t *store) {
     return (store_cursor_t*) cursor;
 }
 
+store_cursor_t* _lz4_store_pop_cursor(store_t *store) {
+
+    // Get cursor from underlying store.  Return null if it fails.
+    struct lz4_store *lstore = (struct lz4_store*) store;
+    store_t *delegate = (store_t*) lstore->underlying_store;
+    ensure(delegate != NULL, "Bad store");
+
+    store_cursor_t *delegate_cursor = delegate->pop_cursor(delegate);
+    if (delegate_cursor == NULL) return NULL;
+
+    // Allocate an empty cursor
+    struct lz4_store_cursor *cursor = calloc(1, sizeof(struct lz4_store_cursor));
+    if (cursor == NULL) return NULL;
+
+    // Initialize the cursor
+    cursor->delegate = delegate_cursor;
+    ((store_cursor_t*)cursor)->seek    = &_lz4_cursor_seek;
+    ((store_cursor_t*)cursor)->advance = &_lz4_cursor_advance;
+    ((store_cursor_t*)cursor)->destroy = &_lz4_cursor_destroy;
+
+    // Decompress the cursor
+    ensure(__lz4_store_decompress(SUCCESS, (store_cursor_t*) cursor, cursor, delegate_cursor) == SUCCESS,
+           "Failed to decompress cursor");
+
+    return (store_cursor_t*) cursor;
+}
+
 /**
  * Return remaining capacity of the store
  */
@@ -231,6 +258,7 @@ store_t* open_lz4_store(store_t *underlying_store, int flags) {
 
     ((store_t *)store)->write        = &_lz4_store_write;
     ((store_t *)store)->open_cursor  = &_lz4_store_open_cursor;
+    ((store_t *)store)->pop_cursor   = &_lz4_store_pop_cursor;
     ((store_t *)store)->capacity     = &_lz4_store_capacity;
     ((store_t *)store)->cursor       = &_lz4_store_cursor;
     ((store_t *)store)->start_cursor = &_lz4_store_start_cursor;

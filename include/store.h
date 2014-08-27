@@ -147,6 +147,17 @@ typedef struct store {
     store_cursor_t* (*open_cursor) (struct store *);
 
     /**
+     * Pop the next read cursor for this store
+     *
+     * TODO: Rethink this api.  Right now we need this for the storage_manager to work.  We want to
+     * make sure that no two threads read the same thing.
+     *
+     * return
+     *  NULL - The cursor could not be bound / created
+     */
+    store_cursor_t* (*pop_cursor) (struct store *);
+
+    /**
      * Return remaining capacity of the store
      * This number is saved in the store at the
      * start of the store
