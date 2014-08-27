@@ -87,6 +87,13 @@ void * write(void* id) {
 }
 
 TEST threaded_store_test() {
+
+    // Create store
+    store_t *delegate = create_mmap_store(SIZE, ".", "test_threaded.str", DELETE_IF_EXISTS);
+    ASSERT(delegate != NULL);
+    store = open_lz4_store(delegate, 0);
+    ASSERT(store != NULL);
+
     pthread_t t1, t2, t3, t4;
     pthread_create(&t1, NULL, &write, &"http://www.urx.com/this/is/a/path/this/is/a/path");
     pthread_create(&t2, NULL, &write, &"http://www.urx.io/this/is/a/path/this/is/a/path");
@@ -118,7 +125,9 @@ TEST threaded_store_test() {
     while (status == SUCCESS) status = cursor->advance(cursor);
     ensure(status == END, "Bad end to cursor");
 
+    // Cleanup
     cursor->destroy(cursor);
+    store->destroy(store);
 
     PASS();
 }
@@ -131,12 +140,6 @@ GREATEST_MAIN_DEFS();
 
 int main(int argc, char **argv) {
     GREATEST_MAIN_BEGIN();
-    store_t *delegate = create_mmap_store(SIZE, ".", "test_threaded.str", DELETE_IF_EXISTS);
-    ASSERT(delegate != NULL);
-    store = open_lz4_store(delegate, 0);
-    ASSERT(store != NULL);
-
     RUN_SUITE(store_threadtest_suite);
-    store->destroy(store);
     GREATEST_MAIN_END();
 }
