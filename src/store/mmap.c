@@ -23,6 +23,8 @@ struct mmap_store {
     uint32_t writers;
     uint32_t syncing;
     uint32_t synced;
+
+    char* filename;
 };
 
 struct mmap_store_cursor {
@@ -335,7 +337,6 @@ int _mmap_close(store_t *store, bool sync) {
     void * mapping = mstore->mapping;
     ensure(mapping != NULL, "Bad mapping");
 
-    // TODO: Actually unlink the file
     int ret = close(mstore->fd);
     ensure(ret == 0, "Failed to close mmaped file");
 
@@ -359,12 +360,14 @@ int _mmap_destroy(store_t *store) {
     void * mapping = mstore->mapping;
     ensure(mapping != NULL, "Bad mapping");
 
-    // TODO: Actually unlink the file
-    int ret = close(mstore->fd);
+    int ret = munmap(mstore->mapping, mstore->capacity);
+    ensure(ret == 0, "Failed to munmap mmaped file");
+
+    ret = close(mstore->fd);
     ensure(ret == 0, "Failed to close mmaped file");
 
-    ret = munmap(mstore->mapping, mstore->capacity);
-    ensure(ret == 0, "Failed to munmap mmaped file");
+    ensure(unlink(mstore->filename) == 0, "Failed to unlink backing store file");
+    free(mstore->filename);
 
     free(mstore);
     return EXIT_SUCCESS;
@@ -416,6 +419,11 @@ store_t* create_mmap_store(uint32_t size, const char* base_dir, const char* name
     uint32_t off = sizeof(uint32_t) * 2;
     ((uint32_t *)mapping)[0] = 0xDEADBEEF;
     ((uint32_t *)mapping)[1] = size;
+
+    int filename_len = (strlen(base_dir) + strlen("/") + strlen(name)) * sizeof(char);
+    store->filename = (char*) calloc(1, filename_len + (1 * sizeof(char)));
+    ensure(store->filename, "Failed to allocate space for full file name");
+    snprintf(store->filename, filename_len + (1 * sizeof(char)), "%s/%s", base_dir, name);
 
     store->fd = real_fd;
     store->capacity = size;
@@ -471,6 +479,11 @@ store_t* open_mmap_store(const char* base_dir, const char* name, int flags) {
     uint32_t off = sizeof(uint32_t) * 2;
     ensure(((uint32_t *)mapping)[0] == 0xDEADBEEF, "Magic number does not match.  Bad file format");
     ensure(((uint32_t *)mapping)[1] == size, "Size recorded does not match file size.  Bad file format");
+
+    int filename_len = (strlen(base_dir) + strlen("/") + strlen(name)) * sizeof(char);
+    store->filename = (char*) calloc(1, filename_len + (1 * sizeof(char)));
+    ensure(store->filename, "Failed to allocate space for full file name");
+    snprintf(store->filename, filename_len + (1 * sizeof(char)), "%s/%s", base_dir, name);
 
     store->fd = real_fd;
     store->capacity = size;
