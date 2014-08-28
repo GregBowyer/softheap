@@ -29,6 +29,7 @@ ADD_LIBRARY(softheap-static
     STATIC
     src/store/mmap.c
     src/store/lz4_store.c
+    src/persistent_atomic_value.c
     #src/fifo.c
     #src/softheap.c
 )
@@ -37,6 +38,7 @@ ADD_LIBRARY(softheap
     SHARED
     src/store/mmap.c
     src/store/lz4_store.c
+    src/persistent_atomic_value.c
     #src/fifo.c
     #src/softheap.c
 )
@@ -60,3 +62,4 @@ ENABLE_TESTING()
 ADD_TEST(NAME test_lz4_store COMMAND test_lz4_store)
 ADD_TEST(NAME test_mmap_store COMMAND test_mmap_store)
 ADD_TEST(NAME test_store_threaded COMMAND test_store_threaded)
+ADD_TEST(NAME test_persistent_atomic_value COMMAND test_persistent_atomic_value)
