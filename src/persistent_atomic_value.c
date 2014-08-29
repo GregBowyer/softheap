@@ -35,6 +35,7 @@ int _compare_and_swap (persistent_atomic_value_t *pav, uint32_t old_value, uint3
     if (fd < 0) {
         pav->_current_value = old_value;
         ck_rwlock_write_unlock(pav->_lock);
+        ensure(0, "Failed to open temporary file");
         return -1;
     }
     int nwritten = write(fd, &pav->_current_value, sizeof(pav->_current_value));
@@ -46,6 +47,7 @@ int _compare_and_swap (persistent_atomic_value_t *pav, uint32_t old_value, uint3
 
         pav->_current_value = old_value;
         ck_rwlock_write_unlock(pav->_lock);
+        ensure(0, "Failed to write to temporary file");
         return -1;
     }
 
@@ -58,6 +60,7 @@ int _compare_and_swap (persistent_atomic_value_t *pav, uint32_t old_value, uint3
 
         pav->_current_value = old_value;
         ck_rwlock_write_unlock(pav->_lock);
+        ensure(0, "Failed to unlink original file");
         return -1;
     }
 
@@ -70,6 +73,7 @@ int _compare_and_swap (persistent_atomic_value_t *pav, uint32_t old_value, uint3
 
         pav->_current_value = old_value;
         ck_rwlock_write_unlock(pav->_lock);
+        ensure(0, "Failed to link temporary file");
         return -1;
     }
 
@@ -78,6 +82,7 @@ int _compare_and_swap (persistent_atomic_value_t *pav, uint32_t old_value, uint3
     if (ret < 0) {
         pav->_current_value = old_value;
         ck_rwlock_write_unlock(pav->_lock);
+        ensure(0, "Failed to unlink temporary file");
         return -1;
     }
 
