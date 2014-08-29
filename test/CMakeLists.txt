@@ -24,3 +24,15 @@ TARGET_LINK_LIBRARIES(test_store_threaded theft softheap-static pthread rt)
 ADD_EXECUTABLE(test_lz4_store store/test_lz4store.c)
 ADD_DEPENDENCIES(test_lz4_store softheap-static)
 TARGET_LINK_LIBRARIES(test_lz4_store theft softheap-static pthread rt)
+
+ADD_EXECUTABLE(test_persistent_atomic_value test_persistent_atomic_value.c)
+ADD_DEPENDENCIES(test_persistent_atomic_value softheap-static)
+TARGET_LINK_LIBRARIES(test_persistent_atomic_value theft softheap-static pthread rt)
+
+ADD_EXECUTABLE(test_storage_manager_basic storage_manager/test_storage_manager_basic.c)
+ADD_DEPENDENCIES(test_storage_manager_basic softheap-static)
+TARGET_LINK_LIBRARIES(test_storage_manager_basic theft softheap-static pthread rt)
+
+ADD_EXECUTABLE(test_storage_manager_threaded storage_manager/test_storage_manager_threaded.c)
+ADD_DEPENDENCIES(test_storage_manager_threaded softheap-static)
+TARGET_LINK_LIBRARIES(test_storage_manager_threaded theft softheap-static pthread rt)

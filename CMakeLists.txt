@@ -29,6 +29,8 @@ ADD_LIBRARY(softheap-static
     STATIC
     src/store/mmap.c
     src/store/lz4_store.c
+    src/persistent_atomic_value.c
+    src/storage_manager/storage_manager.c
     #src/fifo.c
     #src/softheap.c
 )
@@ -37,14 +39,18 @@ ADD_LIBRARY(softheap
     SHARED
     src/store/mmap.c
     src/store/lz4_store.c
+    src/persistent_atomic_value.c
+    src/storage_manager/storage_manager.c
     #src/fifo.c
     #src/softheap.c
 )
 
-SET_TARGET_PROPERTIES(softheap
-    PROPERTIES COMPILE_FLAGS "-Wpadded")
-SET_TARGET_PROPERTIES(softheap-static
-    PROPERTIES COMPILE_FLAGS "-Wpadded")
+# TODO: Reenable this when we are no longer using ck_rwlock_t on the segment list
+#SET_TARGET_PROPERTIES(softheap
+    #PROPERTIES COMPILE_FLAGS "-Wpadded")
+# TODO: Reenable this when we are no longer using ck_rwlock_t on the segment list
+#SET_TARGET_PROPERTIES(softheap-static
+    #PROPERTIES COMPILE_FLAGS "-Wpadded")
 
 ADD_DEPENDENCIES(softheap lz4 concurrency-kit)
 ADD_DEPENDENCIES(softheap-static lz4 concurrency-kit)
@@ -60,3 +66,6 @@ ENABLE_TESTING()
 ADD_TEST(NAME test_lz4_store COMMAND test_lz4_store)
 ADD_TEST(NAME test_mmap_store COMMAND test_mmap_store)
 ADD_TEST(NAME test_store_threaded COMMAND test_store_threaded)
+ADD_TEST(NAME test_persistent_atomic_value COMMAND test_persistent_atomic_value)
+ADD_TEST(NAME test_storage_manager_basic COMMAND test_storage_manager_basic)
+ADD_TEST(NAME test_storage_manager_threaded COMMAND test_storage_manager_threaded)
