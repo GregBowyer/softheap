@@ -31,6 +31,7 @@ ADD_LIBRARY(softheap-static
     src/store/lz4_store.c
     src/persistent_atomic_value.c
     src/segment_list/segment_list.c
+    src/storage_manager/storage_manager.c
     #src/fifo.c
     #src/softheap.c
 )
@@ -41,6 +42,7 @@ ADD_LIBRARY(softheap
     src/store/lz4_store.c
     src/persistent_atomic_value.c
     src/segment_list/segment_list.c
+    src/storage_manager/storage_manager.c
     #src/fifo.c
     #src/softheap.c
 )
@@ -67,3 +69,5 @@ ADD_TEST(NAME test_store_threaded COMMAND test_store_threaded)
 ADD_TEST(NAME test_persistent_atomic_value COMMAND test_persistent_atomic_value)
 ADD_TEST(NAME test_segment_list_basic COMMAND test_segment_list_basic)
 ADD_TEST(NAME test_segment_list_threaded COMMAND test_segment_list_threaded)
+ADD_TEST(NAME test_storage_manager_basic COMMAND test_storage_manager_basic)
+ADD_TEST(NAME test_storage_manager_threaded COMMAND test_storage_manager_threaded)

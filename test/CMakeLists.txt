@@ -36,3 +36,11 @@ TARGET_LINK_LIBRARIES(test_segment_list_basic theft softheap-static pthread rt)
 ADD_EXECUTABLE(test_segment_list_threaded segment_list/test_segment_list_threaded.c)
 ADD_DEPENDENCIES(test_segment_list_threaded softheap-static)
 TARGET_LINK_LIBRARIES(test_segment_list_threaded theft softheap-static pthread rt)
+
+ADD_EXECUTABLE(test_storage_manager_basic storage_manager/test_storage_manager_basic.c)
+ADD_DEPENDENCIES(test_storage_manager_basic softheap-static)
+TARGET_LINK_LIBRARIES(test_storage_manager_basic theft softheap-static pthread rt)
+
+ADD_EXECUTABLE(test_storage_manager_threaded storage_manager/test_storage_manager_threaded.c)
+ADD_DEPENDENCIES(test_storage_manager_threaded softheap-static)
+TARGET_LINK_LIBRARIES(test_storage_manager_threaded theft softheap-static pthread rt)
