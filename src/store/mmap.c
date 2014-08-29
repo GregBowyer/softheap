@@ -344,9 +344,11 @@ int _mmap_close(store_t *store, bool sync) {
 
     int ret = close(mstore->fd);
     ensure(ret == 0, "Failed to close mmaped file");
+    mstore->fd = 0;
 
     ret = munmap(mstore->mapping, mstore->capacity);
     ensure(ret == 0, "Failed to munmap mmaped file");
+    mstore->mapping = NULL;
 
     free(mstore);
     return EXIT_SUCCESS;
