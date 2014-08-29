@@ -204,6 +204,8 @@ store_cursor_t* _mmap_pop_cursor(store_t *store) {
 
         // Seek to the read offset
         enum store_read_status ret = _mmap_cursor_seek((store_cursor_t*) cursor, next_offset);
+        ensure(ret != END, "Failed to seek due to empty store");
+        ensure(ret != UNSYNCED_STORE, "Failed to seek due to unsynced store");
         ensure(ret == SUCCESS, "Failed to seek");
 
         // Set the read cursor.  Note we are setting it to the offset of the thing we are reading,
@@ -218,6 +220,7 @@ store_cursor_t* _mmap_pop_cursor(store_t *store) {
 
     // Seek to the current read offset
     enum store_read_status ret = _mmap_cursor_seek((store_cursor_t*) cursor, current_offset);
+    ensure(ret != UNSYNCED_STORE, "Failed to seek due to unsynced store");
     ensure(ret == SUCCESS, "Failed to seek");
 
     // Save our offset so we can try to CAS
