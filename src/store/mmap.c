@@ -350,6 +350,16 @@ int _mmap_close(store_t *store, bool sync) {
     ensure(ret == 0, "Failed to munmap mmaped file");
     mstore->mapping = NULL;
 
+    store->write        = NULL;
+    store->open_cursor  = NULL;
+    store->pop_cursor   = NULL;
+    store->capacity     = NULL;
+    store->cursor       = NULL;
+    store->start_cursor = NULL;
+    store->sync         = NULL;
+    store->close        = NULL;
+    store->destroy      = NULL;
+
     free(mstore);
     return EXIT_SUCCESS;
 }
@@ -375,6 +385,16 @@ int _mmap_destroy(store_t *store) {
 
     ensure(unlink(mstore->filename) == 0, "Failed to unlink backing store file");
     free(mstore->filename);
+
+    store->write        = NULL;
+    store->open_cursor  = NULL;
+    store->pop_cursor   = NULL;
+    store->capacity     = NULL;
+    store->cursor       = NULL;
+    store->start_cursor = NULL;
+    store->sync         = NULL;
+    store->close        = NULL;
+    store->destroy      = NULL;
 
     free(mstore);
     return EXIT_SUCCESS;

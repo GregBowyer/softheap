@@ -227,6 +227,18 @@ int _lz4_store_close(store_t *store, bool sync) {
     struct lz4_store *lstore = (struct lz4_store*) store;
     store_t *delegate = (store_t*) lstore->underlying_store;
     ensure(delegate != NULL, "Bad store");
+
+    store->write        = NULL;
+    store->open_cursor  = NULL;
+    store->pop_cursor   = NULL;
+    store->capacity     = NULL;
+    store->cursor       = NULL;
+    store->start_cursor = NULL;
+    store->sync         = NULL;
+    store->close        = NULL;
+    store->destroy      = NULL;
+
+    free(lstore);
     return delegate->close(delegate, sync);
 }
 
@@ -243,6 +255,16 @@ int _lz4_store_destroy(store_t *store) {
     store_t *delegate = (store_t*) lstore->underlying_store;
     ensure(delegate != NULL, "Bad store");
     int status = delegate->destroy(delegate);
+
+    store->write        = NULL;
+    store->open_cursor  = NULL;
+    store->pop_cursor   = NULL;
+    store->capacity     = NULL;
+    store->cursor       = NULL;
+    store->start_cursor = NULL;
+    store->sync         = NULL;
+    store->close        = NULL;
+    store->destroy      = NULL;
 
     free(lstore);
     return status;
