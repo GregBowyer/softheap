@@ -201,7 +201,15 @@ TEST test_out_of_bounds_read() {
     store = (struct mmap_store*) create_mmap_store(SIZE, ".", "test_store.str", DELETE_IF_EXISTS);
     ASSERT(store != NULL);
 
-    // Sync the store (sync nothing, but we need to do this for reads to be allowed)
+    // Write something so we can sync this store
+    char *data = (char*) calloc(300, sizeof(char));
+    ASSERT(data != NULL);
+    memset(data, 'A', 250);
+
+    uint32_t a_offset = ((store_t*)store)->write((store_t*) store, data, sizeof(char) * 250);
+    ASSERT(a_offset > 0);
+
+    // Sync the store
     ASSERT_EQ(((store_t*)store)->sync((store_t*) store), 0);
 
     store_cursor_t *cursor =
@@ -212,6 +220,7 @@ TEST test_out_of_bounds_read() {
 
     // Cleanup
     ((store_t*)store)->destroy((store_t*) store);
+    free(data);
 
     PASS();
 }

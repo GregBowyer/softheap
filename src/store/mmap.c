@@ -292,6 +292,11 @@ uint32_t _mmap_start_cursor(store_t *store) {
 uint32_t _mmap_sync(store_t *store) {
     struct mmap_store *mstore = (struct mmap_store*) store;
 
+    // The point we have written up to
+    uint32_t write_cursor = ck_pr_load_32(&mstore->write_cursor);
+
+    ensure(write_cursor > sizeof(uint32_t) * 2, "Attempted to sync an empty store");
+
     // Write that we are actually syncing.  This will stop all new writers.
     ck_pr_store_32(&mstore->syncing, 1);
 
@@ -307,7 +312,7 @@ uint32_t _mmap_sync(store_t *store) {
     }
 
     // The point we have written up to
-    uint32_t write_cursor = ck_pr_load_32(&mstore->write_cursor);
+    write_cursor = ck_pr_load_32(&mstore->write_cursor);
 
     // Actually sync.  At this point we are guaranteed there are no writers, so sync the entire
     // store.
