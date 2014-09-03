@@ -30,6 +30,7 @@ ADD_LIBRARY(softheap-static
     src/store/mmap.c
     src/store/lz4_store.c
     src/persistent_atomic_value.c
+    src/segment_list/segment_list.c
     #src/fifo.c
     #src/softheap.c
 )
@@ -39,6 +40,7 @@ ADD_LIBRARY(softheap
     src/store/mmap.c
     src/store/lz4_store.c
     src/persistent_atomic_value.c
+    src/segment_list/segment_list.c
     #src/fifo.c
     #src/softheap.c
 )
@@ -63,3 +65,5 @@ ADD_TEST(NAME test_lz4_store COMMAND test_lz4_store)
 ADD_TEST(NAME test_mmap_store COMMAND test_mmap_store)
 ADD_TEST(NAME test_store_threaded COMMAND test_store_threaded)
 ADD_TEST(NAME test_persistent_atomic_value COMMAND test_persistent_atomic_value)
+ADD_TEST(NAME test_segment_list_basic COMMAND test_segment_list_basic)
+ADD_TEST(NAME test_segment_list_threaded COMMAND test_segment_list_threaded)
