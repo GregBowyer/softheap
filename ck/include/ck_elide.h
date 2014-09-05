@@ -68,6 +68,7 @@ struct ck_elide_stat {
 	unsigned int n_fallback;
 	unsigned int n_elide;
 	unsigned short skip;
+	unsigned short __padding;
 };
 typedef struct ck_elide_stat ck_elide_stat_t;
 
