@@ -1,6 +1,4 @@
 #include "store.h"
-#include <stdlib.h>
-
 #include <lz4.h>
 
 #define MAX_DECOMP_ATTEMPTS 5
@@ -95,7 +93,7 @@ enum store_read_status __lz4_store_decompress(enum store_read_status status,
 
 enum store_read_status _lz4_cursor_advance(store_cursor_t *cursor) {
     struct lz4_store_cursor *lcursor = (struct lz4_store_cursor*) cursor;
-    store_cursor_t *delegate = (store_cursor_t*)lcursor->delegate;
+    store_cursor_t *delegate = lcursor->delegate;
     return __lz4_store_decompress(delegate->advance(delegate), cursor,
                                   lcursor, delegate);
 }
@@ -103,7 +101,7 @@ enum store_read_status _lz4_cursor_advance(store_cursor_t *cursor) {
 enum store_read_status _lz4_cursor_seek(store_cursor_t *cursor,
                                              uint32_t offset) {
     struct lz4_store_cursor *lcursor = (struct lz4_store_cursor*) cursor;
-    store_cursor_t *delegate = (store_cursor_t*)lcursor->delegate;
+    store_cursor_t *delegate = lcursor->delegate;
     return __lz4_store_decompress(delegate->seek(delegate, offset), cursor,
                                   lcursor, delegate);
 }
@@ -113,17 +111,17 @@ void _lz4_cursor_destroy(store_cursor_t *cursor) {
     // to a thread local pool ?
 
     struct lz4_store_cursor *lcursor = (struct lz4_store_cursor*) cursor;
-    store_cursor_t *delegate = (store_cursor_t*)lcursor->delegate;
+    store_cursor_t *delegate = lcursor->delegate;
     delegate->destroy(delegate);
 
-    void *data = ((store_cursor_t*)cursor)->data;
+    void *data = cursor->data;
     if (data != NULL) free(data);
     free(cursor);
 }
 
 store_cursor_t* _lz4_store_open_cursor(store_t *store) {
     struct lz4_store *lstore = (struct lz4_store*) store;
-    store_t *delegate = (store_t*) lstore->underlying_store;
+    store_t *delegate = lstore->underlying_store;
     ensure(delegate != NULL, "Bad store");
 
     store_cursor_t *delegate_cursor = delegate->open_cursor(delegate);
@@ -144,10 +142,9 @@ store_cursor_t* _lz4_store_open_cursor(store_t *store) {
 }
 
 store_cursor_t* _lz4_store_pop_cursor(store_t *store) {
-
     // Get cursor from underlying store.  Return null if it fails.
     struct lz4_store *lstore = (struct lz4_store*) store;
-    store_t *delegate = (store_t*) lstore->underlying_store;
+    store_t *delegate = lstore->underlying_store;
     ensure(delegate != NULL, "Bad store");
 
     store_cursor_t *delegate_cursor = delegate->pop_cursor(delegate);
@@ -175,7 +172,7 @@ store_cursor_t* _lz4_store_pop_cursor(store_t *store) {
  */
 uint32_t _lz4_store_capacity(store_t *store) {
     struct lz4_store *lstore = (struct lz4_store*) store;
-    store_t *delegate = (store_t*) lstore->underlying_store;
+    store_t *delegate = lstore->underlying_store;
     ensure(delegate != NULL, "Bad store");
     return delegate->capacity(delegate);
 }
@@ -186,7 +183,7 @@ uint32_t _lz4_store_capacity(store_t *store) {
  */
 uint32_t _lz4_store_cursor(store_t *store) {
     struct lz4_store *lstore = (struct lz4_store*) store;
-    store_t *delegate = (store_t*) lstore->underlying_store;
+    store_t *delegate = lstore->underlying_store;
     ensure(delegate != NULL, "Bad store");
     return delegate->cursor(delegate);
 }
@@ -196,7 +193,7 @@ uint32_t _lz4_store_cursor(store_t *store) {
  */
 uint32_t _lz4_store_start_cursor(store_t *store) {
     struct lz4_store *lstore = (struct lz4_store*) store;
-    store_t *delegate = (store_t*) lstore->underlying_store;
+    store_t *delegate = lstore->underlying_store;
     ensure(delegate != NULL, "Bad store");
     return delegate->start_cursor(delegate);
 }
@@ -210,7 +207,7 @@ uint32_t _lz4_store_start_cursor(store_t *store) {
  */
 uint32_t _lz4_store_sync(store_t *store) {
     struct lz4_store *lstore = (struct lz4_store*) store;
-    store_t *delegate = (store_t*) lstore->underlying_store;
+    store_t *delegate = lstore->underlying_store;
     ensure(delegate != NULL, "Bad store");
     return delegate->sync(delegate);
 }
@@ -225,7 +222,7 @@ uint32_t _lz4_store_sync(store_t *store) {
  */
 int _lz4_store_close(store_t *store, bool sync) {
     struct lz4_store *lstore = (struct lz4_store*) store;
-    store_t *delegate = (store_t*) lstore->underlying_store;
+    store_t *delegate = lstore->underlying_store;
     ensure(delegate != NULL, "Bad store");
 
     store->write        = NULL;
@@ -252,7 +249,7 @@ int _lz4_store_close(store_t *store, bool sync) {
  */
 int _lz4_store_destroy(store_t *store) {
     struct lz4_store *lstore = (struct lz4_store*) store;
-    store_t *delegate = (store_t*) lstore->underlying_store;
+    store_t *delegate = lstore->underlying_store;
     ensure(delegate != NULL, "Bad store");
     int status = delegate->destroy(delegate);
 

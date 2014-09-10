@@ -1,8 +1,6 @@
 #include "store.h"
 #include "storage_manager.h"
 #include "segment_list.h"
-#include <stdlib.h>
-#include <ck_rwlock.h>
 #include <persistent_atomic_value.h>
 
 typedef struct storage_manager_cursor_impl {
@@ -12,9 +10,7 @@ typedef struct storage_manager_cursor_impl {
      * The segment this cursor is a part of
      */
     uint32_t segment_number;
-
     uint32_t __padding;
-
     store_cursor_t *underlying_cursor;
 
 } storage_manager_cursor_impl_t;

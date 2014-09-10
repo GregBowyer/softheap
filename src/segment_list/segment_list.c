@@ -1,5 +1,4 @@
 #include "store.h"
-#include <stdlib.h>
 #include <persistent_atomic_value.h>
 #include <segment_list.h>
 
@@ -83,7 +82,6 @@ int _initialize_segment_inlock(segment_list_t *segment_list, uint32_t segment_nu
 // Allocate a segment.  We are assuming the list is either locked or being accessed from a single
 // threaded context
 int _destroy_segment_inlock(segment_list_t *segment_list, uint32_t segment_number, bool destroy_store) {
-
     // Get pointer to this segment
     segment_t *segment = __segment_number_to_segment(segment_list, segment_number);
 
@@ -91,7 +89,7 @@ int _destroy_segment_inlock(segment_list_t *segment_list, uint32_t segment_numbe
     ensure(__is_segment_number_in_segment_list_inlock(segment_list, segment_number),
            "Attempted to destory a segment not in the list");
 
-    // Makle sure we are not destroying a segment that has already been destroyed
+    // Make sure we are not destroying a segment that has already been destroyed
     ensure(segment->state != FREE, "Attempted to destroy segment already in the FREE state");
     ensure(segment->state != CLOSED, "Attempted to destroy segment already in the CLOSED state");
 
@@ -100,8 +98,7 @@ int _destroy_segment_inlock(segment_list_t *segment_list, uint32_t segment_numbe
     ensure(segment->store != NULL, "Attempted to destroy segment with null store");
 
     // Make sure the segment refcount is zero
-    ensure(ck_pr_load_32(&segment->refcount) == 0,
-           "Attempted to destroy segment with non zero refcount");
+    ensure(ck_pr_load_32(&segment->refcount) == 0, "Attempted to destroy segment with non zero refcount");
 
     // Free the underlying store
     if (destroy_store) {
@@ -124,7 +121,6 @@ int _destroy_segment_inlock(segment_list_t *segment_list, uint32_t segment_numbe
 
 // TODO: Decide how to handle the flags.  Should they be passed to the underlying store?
 int _segment_list_allocate_segment(segment_list_t *segment_list, uint32_t segment_number) {
-
     ck_rwlock_write_lock(segment_list->lock);
 
     // Make sure the list is not full
@@ -146,10 +142,7 @@ int _segment_list_allocate_segment(segment_list_t *segment_list, uint32_t segmen
         return -1;
     }
 
-    // Make sure the segment we are allocating was in the "FREE" state
     ensure(segment->state == FREE, "Attempted to allocate segment not in the FREE state");
-
-    // Initialize the segment
     ensure(_initialize_segment_inlock(segment_list, segment_number, false/*reopen_store*/) == 0,
            "Failed to initialize segment");
 
@@ -165,7 +158,6 @@ int _segment_list_allocate_segment(segment_list_t *segment_list, uint32_t segmen
 }
 
 segment_t* _segment_list_get_segment_for_writing(struct segment_list *segment_list, uint32_t segment_number) {
-
     // We will never modify the segment list in this function, so we can take a read lock
     ck_rwlock_read_lock(segment_list->lock);
 
@@ -189,14 +181,11 @@ segment_t* _segment_list_get_segment_for_writing(struct segment_list *segment_li
 
     // Increment the refcount of the newly initialized segment since we are returning it
     ck_pr_inc_32(&segment->refcount);
-
     ck_rwlock_read_unlock(segment_list->lock);
-
     return segment;
 }
 
 segment_t* _segment_list_get_segment_for_reading(struct segment_list *segment_list, uint32_t segment_number) {
-
     // We have to take a write lock because we might be allocating a segment (reopening it from an
     // existing file).
     ck_rwlock_write_lock(segment_list->lock);
@@ -207,16 +196,16 @@ segment_t* _segment_list_get_segment_for_reading(struct segment_list *segment_li
     // This segment is outside the list
     // TODO: More specific error handling
     if (!__is_segment_number_in_segment_list_inlock(segment_list, segment_number)) {
-        ck_rwlock_write_unlock(segment_list->lock);
-        return NULL;
+        segment = NULL;
+        goto end;
     }
 
     // If this segment is free, we may have just been too slow, so return NULL rather than asserting
     // to give the caller an opportunity to recover
     // TODO: More specific error handling
     if (segment->state == FREE) {
-        ck_rwlock_write_unlock(segment_list->lock);
-        return NULL;
+        segment = NULL;
+        goto end;
     }
 
     // We should only be attempting to read from a segment in the READING or CLOSED states
@@ -227,7 +216,6 @@ segment_t* _segment_list_get_segment_for_reading(struct segment_list *segment_li
 
     // If this segment is closed, reopen it
     if (segment->state == CLOSED) {
-
         // Initialize the segment and reopen the existing store file
         ensure(_initialize_segment_inlock(segment_list, segment_number, true/*reopen_store*/) == 0,
                "Failed to allocate segment, from existing file");
@@ -239,13 +227,12 @@ segment_t* _segment_list_get_segment_for_reading(struct segment_list *segment_li
     // Increment the refcount of the newly initialized segment since we are returning it
     ck_pr_inc_32(&segment->refcount);
 
+end:
     ck_rwlock_write_unlock(segment_list->lock);
-
     return segment;
 }
 
 int _segment_list_release_segment_for_writing(struct segment_list *segment_list, uint32_t segment_number) {
-
     ck_rwlock_read_lock(segment_list->lock);
 
     // Get pointer to this segment
@@ -255,13 +242,8 @@ int _segment_list_release_segment_for_writing(struct segment_list *segment_list,
     ensure(__is_segment_number_in_segment_list_inlock(segment_list, segment_number),
            "Attempted to release a segment not in the list");
 
-    // We should never have a segment in the FREE state
     ensure(segment->state != FREE, "Attempted to release writing segment in the FREE state");
-
-    // We should never have a segment in the CLOSED state
     ensure(segment->state != CLOSED, "Attempted to release writing segment in the CLOSED state");
-
-    // We should not be writing to a segment in the READING state
     ensure(segment->state != READING, "Attempted to release writing segment in the READING state");
 
     // This segment is already initialized, but decrement its refcount
@@ -273,7 +255,6 @@ int _segment_list_release_segment_for_writing(struct segment_list *segment_list,
 }
 
 int _segment_list_release_segment_for_reading(struct segment_list *segment_list, uint32_t segment_number) {
-
     ck_rwlock_read_lock(segment_list->lock);
 
     // Get pointer to this segment
@@ -301,7 +282,6 @@ int _segment_list_release_segment_for_reading(struct segment_list *segment_list,
 }
 
 int _segment_list_close_segment(struct segment_list *segment_list, uint32_t segment_number) {
-
     // Take out a write lock so we are mutually exclusive with get_segment
     ck_rwlock_write_lock(segment_list->lock);
 
@@ -354,7 +334,6 @@ int _segment_list_close_segment(struct segment_list *segment_list, uint32_t segm
  * means we've freed up to segment 1.
  */
 uint32_t _segment_list_free_segments(struct segment_list *segment_list, uint32_t segment_number, bool destroy_store) {
-
     ck_rwlock_write_lock(segment_list->lock);
 
     // TODO: Think more carefully about what this function can return
@@ -397,17 +376,10 @@ uint32_t _segment_list_free_segments(struct segment_list *segment_list, uint32_t
 }
 
 bool _segment_list_is_empty(struct segment_list *segment_list) {
-
     ck_rwlock_read_lock(segment_list->lock);
-
-    if (segment_list->head == segment_list->tail) {
-        ck_rwlock_read_unlock(segment_list->lock);
-        return true;
-    }
-    else {
-        ck_rwlock_read_unlock(segment_list->lock);
-        return false;
-    }
+    bool toRet = segment_list->head == segment_list->tail;
+    ck_rwlock_read_unlock(segment_list->lock);
+    return toRet;
 }
 
 // TODO: The code in this function is almost identical to _segment_list_close.  Factor this out and
@@ -419,7 +391,6 @@ int _segment_list_destroy(segment_list_t *segment_list) {
     // should only be called from a single threaded context.
     // TODO: Find some way to verify that this is called from a single threaded context
     while (segment_list->head != segment_list->tail) {
-
         segment_t *segment = __segment_number_to_segment(segment_list, segment_list->tail);
 
         ensure(segment->state != FREE,
@@ -440,15 +411,9 @@ int _segment_list_destroy(segment_list_t *segment_list) {
         segment_list->tail++;
     }
 
-    // Free the segment buffer
     free(segment_list->segment_buffer);
-
-    // Free the segment list lock
     free(segment_list->lock);
-
-    // Free the segment list
     free(segment_list);
-
     return 0;
 }
 
@@ -459,7 +424,6 @@ int _segment_list_close(segment_list_t *segment_list) {
     // should only be called from a single threaded context.
     // TODO: Find some way to verify that this is called from a single threaded context
     while (segment_list->head != segment_list->tail) {
-
         segment_t *segment = __segment_number_to_segment(segment_list, segment_list->tail);
 
         ensure(segment->state != FREE,
@@ -468,7 +432,6 @@ int _segment_list_close(segment_list_t *segment_list) {
         // If the segment has already been closed, the resources are freed, so there's no need to
         // destroy it
         if (segment->state != CLOSED) {
-
             // Destroy the segment
             ensure(_destroy_segment_inlock(segment_list, segment_list->tail, false/*destroy_store*/) == 0,
                   "Failed to destroy segment when closing segment list");
@@ -480,19 +443,14 @@ int _segment_list_close(segment_list_t *segment_list) {
         segment_list->tail++;
     }
 
-    // Free the segment buffer
     free(segment_list->segment_buffer);
-
-    // Free the segment list lock
     free(segment_list->lock);
-
-    // Free the segment list
     free(segment_list);
 
     return 0;
 }
 
-segment_list_t* create_segment_list(const char* base_dir, const char* name, int segment_size, int flags) {
+segment_list_t* create_segment_list(const char* base_dir, const char* name, uint32_t segment_size, int flags) {
 
     // Create segment list
     segment_list_t *segment_list = (segment_list_t*) calloc(1, sizeof(segment_list_t));
@@ -501,16 +459,16 @@ segment_list_t* create_segment_list(const char* base_dir, const char* name, int 
     ensure(segment_list != NULL, "failed to allocate segment_list");
 
     // Initialize methods
-    segment_list->allocate_segment = _segment_list_allocate_segment;
-    segment_list->get_segment_for_writing = _segment_list_get_segment_for_writing;
-    segment_list->get_segment_for_reading = _segment_list_get_segment_for_reading;
+    segment_list->close                       = _segment_list_close;
+    segment_list->destroy                     = _segment_list_destroy;
+    segment_list->is_empty                    = _segment_list_is_empty;
+    segment_list->close_segment               = _segment_list_close_segment;
+    segment_list->free_segments               = _segment_list_free_segments;
+    segment_list->allocate_segment            = _segment_list_allocate_segment;
+    segment_list->get_segment_for_writing     = _segment_list_get_segment_for_writing;
+    segment_list->get_segment_for_reading     = _segment_list_get_segment_for_reading;
     segment_list->release_segment_for_writing = _segment_list_release_segment_for_writing;
     segment_list->release_segment_for_reading = _segment_list_release_segment_for_reading;
-    segment_list->close_segment = _segment_list_close_segment;
-    segment_list->free_segments = _segment_list_free_segments;
-    segment_list->is_empty = _segment_list_is_empty;
-    segment_list->destroy = _segment_list_destroy;
-    segment_list->close = _segment_list_close;
 
     // TODO: Make the number of segments configurable
     segment_list->segment_buffer = (segment_t*) calloc(1, sizeof(segment_t) * MAX_SEGMENTS);
@@ -521,10 +479,10 @@ segment_list_t* create_segment_list(const char* base_dir, const char* name, int 
     segment_list->tail = 0;
 
     // Initialize the options that we pass to the store
+    segment_list->name         = name;
+    segment_list->flags        = flags;
+    segment_list->base_dir     = base_dir;
     segment_list->segment_size = segment_size;
-    segment_list->base_dir = base_dir;
-    segment_list->name = name;
-    segment_list->flags = flags;
 
     // Lock for the segment list
     segment_list->lock = (ck_rwlock_t*) calloc(1, sizeof(ck_rwlock_t));
@@ -533,9 +491,8 @@ segment_list_t* create_segment_list(const char* base_dir, const char* name, int 
     return segment_list;
 }
 
-segment_list_t* open_segment_list(const char* base_dir, const char* name, int segment_size, int flags,
-                                  int start_segment, int end_segment) {
-
+segment_list_t* open_segment_list(const char* base_dir, const char* name, uint32_t segment_size, int flags,
+                                  uint32_t start_segment, uint32_t end_segment) {
     // Create segment list
     segment_list_t *segment_list = (segment_list_t*) calloc(1, sizeof(segment_list_t));
 

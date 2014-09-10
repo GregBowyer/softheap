@@ -165,7 +165,7 @@ typedef struct segment_list {
     int flags;
 
     // How big each segment should be
-    int segment_size;
+    uint32_t segment_size;
 
     // Lock for segment list
     // TODO: Check performance of this.  Improve granularity.
@@ -173,10 +173,10 @@ typedef struct segment_list {
 
 } segment_list_t;
 
-segment_list_t* create_segment_list(const char* base_dir, const char* name, int segment_size,
+segment_list_t* create_segment_list(const char* base_dir, const char* name, uint32_t segment_size,
                                     int flags);
-segment_list_t* open_segment_list(const char* base_dir, const char* name, int segment_size,
+segment_list_t* open_segment_list(const char* base_dir, const char* name, uint32_t segment_size,
                                   int flags,
-                                  int start_segment, int end_segment);
+                                  uint32_t start_segment, uint32_t end_segment);
 
 #endif
