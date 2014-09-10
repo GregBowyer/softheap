@@ -114,13 +114,13 @@ uint32_t _mmap_write(store_t *store, void *data, uint32_t size) {
     // TODO: Make this tunable
     long page_size = sysconf(_SC_PAGESIZE);
     uint32_t last_sync = ck_pr_load_32(&mstore->last_sync);
-    if (new_pos > last_sync + page_size * 32) {
+    if (new_pos > last_sync + page_size * 1024) {
         ensure(last_sync % page_size == 0,
                "Last sync offset is not a multiple of page size, which is needed for msync");
         uint32_t page_aligned_new_pos = (new_pos - (new_pos % page_size));
         if (ck_pr_cas_32(&mstore->last_sync, last_sync, page_aligned_new_pos)) {
             // TODO: Sync the previous page too, since it may have gotten dirtied
-            ensure(msync(mapping + last_sync, page_size * 32, MS_SYNC) == 0, "Unable to sync");
+            ensure(msync(mapping + last_sync, page_size * 1024, MS_ASYNC) == 0, "Unable to sync");
         }
     }
 
@@ -450,7 +450,7 @@ store_t* create_mmap_store(uint32_t size, const char* base_dir, const char* name
     int dir_fd = open(base_dir, O_DIRECTORY, (mode_t)0600);
     if (dir_fd == -1) return NULL;
 
-    int openat_flags = O_RDWR | O_CREAT;
+    int openat_flags = O_RDWR | O_CREAT | O_SYNC;
 
     if (flags & DELETE_IF_EXISTS) {
         openat_flags = openat_flags | O_TRUNC;
