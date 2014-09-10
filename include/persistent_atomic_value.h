@@ -5,6 +5,10 @@
 #include <stdint.h>
 #include <ck_rwlock.h>
 
+#include <errno.h>
+#include <unistd.h>
+#include <fcntl.h>
+
 typedef struct persistent_atomic_value {
 
     /**
@@ -41,9 +45,8 @@ typedef struct persistent_atomic_value {
     void (*destroy) (struct persistent_atomic_value *);
 
 
-
     ck_rwlock_t *_lock;
-    uint32_t _current_value;
+    uint32_t _current_value; // Must be CAS guarded
     uint32_t __padding;
     char *_filename;
     char *_temporary_filename;
