@@ -464,6 +464,8 @@ int _mmap_close(store_t *store, bool sync) {
     ensure(ret == 0, "Failed to munmap mmaped file");
     mstore->mapping = NULL;
 
+    free(mstore->filename);
+
     store->write        = NULL;
     store->open_cursor  = NULL;
     store->pop_cursor   = NULL;

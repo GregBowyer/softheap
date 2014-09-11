@@ -4,7 +4,9 @@
 #include "store.h"
 #include <ck_rwlock.h>
 
-#define MAX_SEGMENTS ((uint64_t) (128 * 1024 * 1024))
+// TODO: Make this configurable, or scale it with the segment size.  Right now, if we have 32MB
+// segments, this will mean our queue can hold 1TB of data.
+#define MAX_SEGMENTS ((uint64_t) (32 * 1024))
 
 /**
  * An enumeration of all the possible states a segment could be in.  The transitions are all
