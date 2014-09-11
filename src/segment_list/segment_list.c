@@ -164,6 +164,11 @@ segment_t* _segment_list_get_segment_for_writing(struct segment_list *segment_li
     // Get pointer to this segment
     segment_t *segment = __segment_number_to_segment(segment_list, segment_number);
 
+    // Make sure we are not trying to get a segment before it has been allocated.  Getting a segment
+    // anytime after it was allocated can easily happen because of a slow thread, but getting it
+    // before it has been allocated should not happen.
+    ensure(segment_number < segment_list->head, "Attempted to get a segment before it was allocated");
+
     // This segment is outside the list
     // TODO: More specific error handling
     if (!__is_segment_number_in_segment_list_inlock(segment_list, segment_number)) {

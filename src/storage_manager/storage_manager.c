@@ -159,19 +159,7 @@ int _allocate_and_advance_write_segment(storage_manager_impl_t* sm, uint32_t cur
 //
 
 
-/**
- * write:
- * Args: self, data, len
- * Returns: 0 on success
- * -1 on failure
- *  TODO: Better error reporting
- *
- * Note that allocating the cursor increments the refcount of the segment that it is a part of, so
- * it must be explicitly freed.
- */
-int _storage_manager_impl_write(storage_manager_t *storage_manager,
-                                                      void *data,
-                                                      uint32_t size) {
+int _storage_manager_impl_write(storage_manager_t *storage_manager, void *data, uint32_t size) {
 
     // Get the private storage manager struct
     storage_manager_impl_t *sm = (storage_manager_impl_t*) storage_manager;
@@ -243,10 +231,6 @@ int _storage_manager_impl_write(storage_manager_t *storage_manager,
 }
 
 /**
- * pop_cursor:
- * Args: self
- * Returns: Cursor to the underlying data
- *
  * This returns a cursor that points at the beginning of the storage pool.  Internally it does this
  * by finding the first segment in the storage pool and then creating a cursor at the correct
  * location there.  Note that the storage manager has to keep track of the offset in the segment to
@@ -260,48 +244,36 @@ storage_manager_cursor_t* _storage_manager_impl_pop_cursor(storage_manager_t *st
     // Get the private storage manager struct
     storage_manager_impl_t *sm = (storage_manager_impl_t*) storage_manager;
 
-    uint32_t current_read_segment = ck_pr_load_32(&sm->read_segment);
-    uint32_t next_close_segment = ck_pr_load_32(&sm->next_close_segment);
+    // A cursor that references a block of data in the storage manager
+    storage_manager_cursor_impl_t* read_cursor = NULL;
 
-    // Since we got the current read segment first, there is no case where we should see that it is
-    // greater than our next close segment
-    ensure(current_read_segment <= next_close_segment,
-           "Invariant broken: Our current read segment is greater than our next close segment, "
-           "which means we are reading from a segment that was not yet closed and reopened.");
-
-    // Make sure we aren't reading when the segment we need to read from has not been synced yet
-    if (current_read_segment == next_close_segment) {
-        return NULL;
-    }
-
-
-    // Get a cursor to the beginning of the current read segment
-    storage_manager_cursor_impl_t* read_cursor = _pop_cursor(sm, current_read_segment);
-
-    // TODO: More specific error handling.  "read_cursor" could be NULL for other reasons besides
-    // reaching the end of the segment.
+    // Retry logic to deal with the fact that we may be racing other threads to get back a cursor
     while (read_cursor == NULL) {
 
-        // If we couldn't get it, try the next segment
-        //_close_cursor(storage_manager_impl, read_cursor);
+        // Get the current read segment and the next close segment.
+        uint32_t current_read_segment = ck_pr_load_32(&sm->read_segment);
+        uint32_t next_close_segment = ck_pr_load_32(&sm->next_close_segment);
 
-        // Try to increment the read segment.  Note we are using CAS to make sure that two threads
-        // don't both increment the read segment unintentionally.
-        // TODO: Make sure this works
-        uint32_t new_read_segment = current_read_segment + 1;
-        ck_pr_cas_32(&sm->read_segment, current_read_segment, new_read_segment);
-
-        // Get the new current values for the read segment
-        current_read_segment = ck_pr_load_32(&sm->read_segment);
-        next_close_segment = ck_pr_load_32(&sm->next_close_segment);
+        // Since we got the current read segment first, there is no case where we should see that it
+        // is greater than our next close segment
+        ensure(current_read_segment <= next_close_segment,
+               "Invariant broken: Our current read segment is greater than our next close segment, "
+               "which means we are reading from a segment that was not yet closed and reopened.");
 
         // Make sure we aren't reading when the segment we need to read from has not been synced yet
         if (current_read_segment == next_close_segment) {
             return NULL;
         }
 
-        // Try to pop again
+        // Try to pop a block of data from what we think is the current read segment
         read_cursor = _pop_cursor(sm, current_read_segment);
+
+        // TODO: Return and handle errors from _pop_cursor
+        // If we failed to get the cursor, try to increment the read segment.  Note we are using CAS
+        // to make sure that two threads don't both increment the read segment unintentionally.
+        if (read_cursor == NULL) {
+            ck_pr_cas_32(&sm->read_segment, current_read_segment, current_read_segment + 1);
+        }
     }
 
     return (storage_manager_cursor_t*) read_cursor;
@@ -425,12 +397,6 @@ int _storage_manager_impl_sync(storage_manager_t *storage_manager, int sync_curr
 
         // Get the store we are attempting to sync
         store_t *store_to_sync = segment_to_sync->store;
-
-        // Make sure this segment is either not empty or is our current write segment
-        ensure((store_to_sync->start_cursor(store_to_sync) !=
-                store_to_sync->cursor(store_to_sync)) ||
-               (current_sync_head == current_write_segment),
-               "Attempting to sync an empty segment that is not our currently writing segment");
 
         // Do not sync the currently writing segment if it is empty.  Abort if we found an empty
         // segment that is not currently being written to
