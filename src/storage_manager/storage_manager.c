@@ -1,7 +1,11 @@
-#include "store.h"
 #include "storage_manager.h"
+
+#include "store.h"
 #include "segment_list.h"
-#include <persistent_atomic_value.h>
+#include "persistent_atomic_value.h"
+
+#include <sys/types.h>
+#include <unistd.h>
 
 typedef struct storage_manager_cursor_impl {
     storage_manager_cursor_t cursor;
@@ -37,11 +41,70 @@ typedef struct storage_manager_impl {
 
     uint32_t __padding;
 
+    // Base directory containing our data files
+    const char *base_dir;
+
 } storage_manager_impl_t;
 
 //
 // Private helper functions
 //
+
+// Name of the file to use as a basic sanity check to fail in the case where two storage managers
+// are attempting to open the same set of data files
+#define LOCK_FILENAME "storage_manager_lock.pid"
+
+/*
+ * Create a lock file in the given data directory.  While not perfect, this will at least give us
+ * some naive protection against two different processes opening the same set of data files.
+ */
+void __lock_data_directory(const char* base_dir) {
+
+    // Open data directory
+    int dir_fd = open(base_dir, O_DIRECTORY, (mode_t)0600);
+    if (dir_fd < 0) {
+        perror("Failed to open data directory for storage_manager");
+        ensure(0, "Failed to open data directory for storage_manager");
+    }
+
+    // Open lock file in data directory
+    int lock_fd = openat(dir_fd, LOCK_FILENAME, O_RDWR | O_CREAT | O_EXCL | O_SYNC, (mode_t)0600);
+    if (lock_fd < 0) {
+        perror("Failed to create lock file for storage_manager");
+        ensure(0, "Failed to create lock file for storage_manager");
+    }
+
+    // Write pid to lock file
+    int pid = getpid();
+    ssize_t nwritten = write(lock_fd, &pid, sizeof(pid));
+    if (nwritten != sizeof(pid)) {
+        perror("Failed to write pid to storage_manager lock file");
+    }
+    if (fsync(lock_fd) != 0) {
+        perror("Failed to fsync storage_manager lock file");
+    }
+}
+
+/*
+ * Remove the lock file in the given data directory.  While not perfect, this will at least give us
+ * some naive protection against two different processes opening the same set of data files.
+ */
+void __unlock_data_directory(const char* base_dir, bool ignore_not_found) {
+
+    // Open data directory
+    int dir_fd = open(base_dir, O_DIRECTORY, (mode_t)0600);
+    if (dir_fd < 0) {
+        perror("Failed to open data directory for storage_manager");
+        ensure(0, "Failed to open data directory for storage_manager");
+    }
+
+    // Remove lock file
+    int ret = unlinkat(dir_fd, LOCK_FILENAME, 0);
+    if (ret < 0 && !(errno == ENOENT && ignore_not_found)) {
+        perror("Failed to remove lock file for storage_manager");
+        ensure(0, "Failed to remove lock file for storage_manager");
+    }
+}
 
 /*
  * Pops a read cursor from the segment given by segment_number.  The caller is responsible for retry
@@ -159,19 +222,7 @@ int _allocate_and_advance_write_segment(storage_manager_impl_t* sm, uint32_t cur
 //
 
 
-/**
- * write:
- * Args: self, data, len
- * Returns: 0 on success
- * -1 on failure
- *  TODO: Better error reporting
- *
- * Note that allocating the cursor increments the refcount of the segment that it is a part of, so
- * it must be explicitly freed.
- */
-int _storage_manager_impl_write(storage_manager_t *storage_manager,
-                                                      void *data,
-                                                      uint32_t size) {
+int _storage_manager_impl_write(storage_manager_t *storage_manager, void *data, uint32_t size) {
 
     // Get the private storage manager struct
     storage_manager_impl_t *sm = (storage_manager_impl_t*) storage_manager;
@@ -243,10 +294,6 @@ int _storage_manager_impl_write(storage_manager_t *storage_manager,
 }
 
 /**
- * pop_cursor:
- * Args: self
- * Returns: Cursor to the underlying data
- *
  * This returns a cursor that points at the beginning of the storage pool.  Internally it does this
  * by finding the first segment in the storage pool and then creating a cursor at the correct
  * location there.  Note that the storage manager has to keep track of the offset in the segment to
@@ -260,48 +307,36 @@ storage_manager_cursor_t* _storage_manager_impl_pop_cursor(storage_manager_t *st
     // Get the private storage manager struct
     storage_manager_impl_t *sm = (storage_manager_impl_t*) storage_manager;
 
-    uint32_t current_read_segment = ck_pr_load_32(&sm->read_segment);
-    uint32_t next_close_segment = ck_pr_load_32(&sm->next_close_segment);
+    // A cursor that references a block of data in the storage manager
+    storage_manager_cursor_impl_t* read_cursor = NULL;
 
-    // Since we got the current read segment first, there is no case where we should see that it is
-    // greater than our next close segment
-    ensure(current_read_segment <= next_close_segment,
-           "Invariant broken: Our current read segment is greater than our next close segment, "
-           "which means we are reading from a segment that was not yet closed and reopened.");
-
-    // Make sure we aren't reading when the segment we need to read from has not been synced yet
-    if (current_read_segment == next_close_segment) {
-        return NULL;
-    }
-
-
-    // Get a cursor to the beginning of the current read segment
-    storage_manager_cursor_impl_t* read_cursor = _pop_cursor(sm, current_read_segment);
-
-    // TODO: More specific error handling.  "read_cursor" could be NULL for other reasons besides
-    // reaching the end of the segment.
+    // Retry logic to deal with the fact that we may be racing other threads to get back a cursor
     while (read_cursor == NULL) {
 
-        // If we couldn't get it, try the next segment
-        //_close_cursor(storage_manager_impl, read_cursor);
+        // Get the current read segment and the next close segment.
+        uint32_t current_read_segment = ck_pr_load_32(&sm->read_segment);
+        uint32_t next_close_segment = ck_pr_load_32(&sm->next_close_segment);
 
-        // Try to increment the read segment.  Note we are using CAS to make sure that two threads
-        // don't both increment the read segment unintentionally.
-        // TODO: Make sure this works
-        uint32_t new_read_segment = current_read_segment + 1;
-        ck_pr_cas_32(&sm->read_segment, current_read_segment, new_read_segment);
-
-        // Get the new current values for the read segment
-        current_read_segment = ck_pr_load_32(&sm->read_segment);
-        next_close_segment = ck_pr_load_32(&sm->next_close_segment);
+        // Since we got the current read segment first, there is no case where we should see that it
+        // is greater than our next close segment
+        ensure(current_read_segment <= next_close_segment,
+               "Invariant broken: Our current read segment is greater than our next close segment, "
+               "which means we are reading from a segment that was not yet closed and reopened.");
 
         // Make sure we aren't reading when the segment we need to read from has not been synced yet
         if (current_read_segment == next_close_segment) {
             return NULL;
         }
 
-        // Try to pop again
+        // Try to pop a block of data from what we think is the current read segment
         read_cursor = _pop_cursor(sm, current_read_segment);
+
+        // TODO: Return and handle errors from _pop_cursor
+        // If we failed to get the cursor, try to increment the read segment.  Note we are using CAS
+        // to make sure that two threads don't both increment the read segment unintentionally.
+        if (read_cursor == NULL) {
+            ck_pr_cas_32(&sm->read_segment, current_read_segment, current_read_segment + 1);
+        }
     }
 
     return (storage_manager_cursor_t*) read_cursor;
@@ -345,6 +380,9 @@ int _storage_manager_impl_destroy(storage_manager_t *storage_manager) {
     sm->sync_head->destroy(sm->sync_head);
     sm->sync_tail->destroy(sm->sync_tail);
 
+    // Basic sanity check to make sure that another storage_manager process wasn't using these files
+    __unlock_data_directory(sm->base_dir, false);
+
     // Free the storage manager itself
     free(sm);
 
@@ -373,6 +411,9 @@ int _storage_manager_impl_close(storage_manager_t *storage_manager) {
     // Close the persistent sync values
     sm->sync_head->close(sm->sync_head);
     sm->sync_tail->close(sm->sync_tail);
+
+    // Basic sanity check to make sure that another storage_manager process wasn't using these files
+    __unlock_data_directory(sm->base_dir, false);
 
     // Free the storage manager itself
     free(sm);
@@ -411,26 +452,30 @@ int _storage_manager_impl_sync(storage_manager_t *storage_manager, int sync_curr
            ((current_sync_head == current_write_segment) &&
             sync_currently_writing_segment)) {
 
+        // The current_write_segment can point to an unallocated segment if the queue is empty,
+        // which means we can be getting a not yet allocated sement.  This is asserted in the
+        // segment list as breaking our invariant, so check that here and don't try to get it in
+        // that case.
+        // TODO: Think more about the invariants of this class and the segment list and how they
+        // interact.  Maybe the max 32 bit int can be a sentinel for not yet allocated, but that may
+        // break a lot of comparisons as the code is written now.
+        if (current_write_segment == 0) {
+            if (sl->is_empty(sl)) {
+                break;
+            }
+        }
+
         // Get the segment we are attempting to sync
         segment_t* segment_to_sync = sl->get_segment_for_writing(sl, current_sync_head);
 
         // Abort if we could not get the next segment to sync.  This means that the segment got
-        // synced from underneath us, or has not been allocated, so some other thread is taking care
-        // of it
-        // TODO: Assert in the segment list if we try to get a segment list PAST what we have
-        // allocated, and properly handle that here
+        // synced from underneath us, so some other thread is taking care of it
         if (segment_to_sync == NULL) {
             break;
         }
 
         // Get the store we are attempting to sync
         store_t *store_to_sync = segment_to_sync->store;
-
-        // Make sure this segment is either not empty or is our current write segment
-        ensure((store_to_sync->start_cursor(store_to_sync) !=
-                store_to_sync->cursor(store_to_sync)) ||
-               (current_sync_head == current_write_segment),
-               "Attempting to sync an empty segment that is not our currently writing segment");
 
         // Do not sync the currently writing segment if it is empty.  Abort if we found an empty
         // segment that is not currently being written to
@@ -510,11 +555,17 @@ int _storage_manager_impl_sync(storage_manager_t *storage_manager, int sync_curr
 // Storage manager constructor
 storage_manager_t* create_storage_manager(const char* base_dir, const char* name, int segment_size, int flags) {
 
-    // TODO: Decide if we want to allow different kinds of storage managers, and how to select
-    // between them.
+    // Basic sanity check to make sure that another storage_manager process isn't using these files
+    if (flags & DELETE_IF_EXISTS) {
+        __unlock_data_directory(base_dir, true);
+    }
+    __lock_data_directory(base_dir);
 
     // First, allocate the storage manager
     storage_manager_impl_t *sm = (storage_manager_impl_t*) calloc(1, sizeof(storage_manager_impl_t));
+
+    // Save the base_dir filename so we can unlock it when we close the storage_manager
+    sm->base_dir = base_dir;
 
     // TODO: Handle this error
     ensure(sm != NULL, "failed to allocate storage_manager");
@@ -555,8 +606,14 @@ storage_manager_t* create_storage_manager(const char* base_dir, const char* name
 // there be a destroy store?  A close store?
 storage_manager_t* open_storage_manager(const char* base_dir, const char* name, int segment_size, int flags) {
 
+    // Basic sanity check to make sure that another storage_manager process isn't using these files
+    __lock_data_directory(base_dir);
+
     // First, allocate the storage manager
     storage_manager_impl_t *sm = (storage_manager_impl_t*) calloc(1, sizeof(storage_manager_impl_t));
+
+    // Save the base_dir filename so we can unlock it when we close the storage_manager
+    sm->base_dir = base_dir;
 
     // TODO: Handle this error
     ensure(sm != NULL, "failed to allocate storage_manager");

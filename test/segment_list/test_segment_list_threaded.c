@@ -92,16 +92,21 @@ void *test_getter(void* data) {
         // Get our current head
         uint32_t current_head = ck_pr_load_32(&head);
 
+        // We haven't inserted anything yet
+        if (current_head == 0) {
+            continue;
+        }
+
         // Regardless of whether we succeeded, try to get the segment.  Get it for writing, because
         // that function always gives us a chance to recover (the segment being in any other state
         // may be a race condition rather than a programming error, so this function will always
         // give us a chance to recover by returning NULL rather than asserting)
-        segment_t *segment = segment_list->get_segment_for_writing(segment_list, current_head);
+        segment_t *segment = segment_list->get_segment_for_writing(segment_list, current_head - 1);
         if (segment != NULL) {
             ensure(check_segment(segment, 1) == 0, "Check segment failed");
 
             // We should always be able to release the segment, because we have a handle to it
-            ensure(segment_list->release_segment_for_writing(segment_list, current_head) >= 0, "Failed to release segment");
+            ensure(segment_list->release_segment_for_writing(segment_list, current_head - 1) >= 0, "Failed to release segment");
 
         }
 
