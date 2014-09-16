@@ -8,6 +8,10 @@
 #include <string.h>
 #include <ck_pr.h>
 
+#define EXTRACT_SYNCING(x) ((x & 0x80000000U) >> 31)
+#define SET_SYNCING(x) (x | (1 << 31))
+#define EXTRACT_WRITERS(x) (x & 0x7FFFFFFFU)
+
 struct mmap_store {
     store_t store;
     int fd;
@@ -19,11 +23,10 @@ struct mmap_store {
     uint32_t write_cursor; // MUST BE CAS GUARDED
     uint32_t last_sync;    // MUST BE CAS GUARDED
 
-    uint32_t writers;
-    uint32_t syncing;
+    // This is a value that contains both the number of writers and the bit to determine whether a
+    // thread is attempting to sync this store.  This must be CAS guarded.
+    uint32_t syncing_and_writers;
     uint32_t synced;
-
-    uint32_t __padding;
 
     char* filename;
 };
@@ -50,21 +53,35 @@ uint32_t _mmap_write(store_t *store, void *data, uint32_t size) {
     void * mapping = mstore->mapping;
     ensure(mapping != NULL, "Bad mapping");
 
-    // Record that we are trying to write.  This will cause anyone attempting to start syncing to
-    // abort.
-    ck_pr_inc_32(&mstore->writers);
+    // We must ensure that no writes are happening during a sync.  To do this, we pack both the
+    // "syncing" bit and the number of writers in the same 32 bit value.
+    // 1. Load the "syncing_and_writers" value
+    // 2. Check if "syncing" and abort if so
+    // 3. Increment the number of writers
+    // 4. Try to Compare and Swap this value
+    // 5. Repeat if CAS fails
+    bool writers_incremented = false;
+    while (!writers_incremented) {
 
-    // Ensure that the increment of the writers is done before we check the mstore->syncing value
-    ck_pr_fence_memory();
+        // 1.
+        uint32_t syncing_and_writers = ck_pr_load_32(&mstore->syncing_and_writers);
+        uint32_t syncing = EXTRACT_SYNCING(syncing_and_writers);
+        uint32_t writers = EXTRACT_WRITERS(syncing_and_writers);
 
-    // If there is anyone that started syncing, abort the write.  Since the sync function checks to
-    // see if there are any writers after it has indicated that it will sync, we are guaranteed that
-    // if we pass this point the sync thread will notice that we are writing.
-    if (ck_pr_load_32(&mstore->syncing) != 0) {
-        // TODO: More specific errors, to indicate that we were not able to write because there was
-        // someone syncing
-        ck_pr_dec_32(&mstore->writers);
-        return 0;
+        // Make sure we aren't already at 2^32 - 1 writers.  If we try to increment when we already have
+        // that many we will overflow the 31 bits we are using to store the writers.
+        ensure(writers < 0xEFFFFFFFU, "Too many writers");
+
+        // 2.
+        if (syncing == 1) {
+            return 0;
+        }
+
+        // 3.
+        // 4.
+        if (ck_pr_cas_32(&mstore->syncing_and_writers, syncing_and_writers, syncing_and_writers + 1)) {
+            writers_incremented = true;
+        }
     }
 
     ensure(ck_pr_load_32(&mstore->synced) == 0, "A writer should not get here when the store is synced");
@@ -75,6 +92,7 @@ uint32_t _mmap_write(store_t *store, void *data, uint32_t size) {
 
     uint32_t cursor_pos = 0;
     uint32_t new_pos = 0;
+    uint32_t ret = 0;
 
     // Assert if we are trying to write a block larger than the capacity of this store, and the
     // store is empty.  This is to die fast on the case where we have a block that we can never
@@ -90,9 +108,10 @@ uint32_t _mmap_write(store_t *store, void *data, uint32_t size) {
         uint32_t remaining = mstore->capacity - cursor_pos;
 
         if (remaining <= required_size) {
-            // Decrement the number of writers to indicate that we aborted writing
-            ck_pr_dec_32(&mstore->writers);
-            return 0;
+            // TODO: Structure this code better.  Right now, this works because "ret" is still zero,
+            // and we return zero in the case where our data couldn't be written because the store
+            // was full.
+            goto decrement_writers;
         }
 
         new_pos = cursor_pos + required_size;
@@ -124,10 +143,40 @@ uint32_t _mmap_write(store_t *store, void *data, uint32_t size) {
 
     ensure(ck_pr_load_32(&mstore->synced) == 0, "A writer should not be here when the store is synced");
 
-    // Decrement the number of writers to indicate that we are finished writing
-    ck_pr_dec_32(&mstore->writers);
+    // Return the position in the store that we wrote to
+    // TODO: Clean up the error handling and return values for this function
+    ret = cursor_pos;
 
-    return cursor_pos;
+    bool writers_decremented = false;
+decrement_writers:
+    // TODO: Need to initialize here, otherwise writers_decremented will be true and uninitialized
+    // in the case where we jump to this label.  Structure this function better.
+    writers_decremented = false;
+
+    // Decrement the number of writers to indicate that we are finished writing
+    // 1. Load the "syncing_and_writers" value
+    // 2. Decrement the number of writers
+    // 3. Try to Compare and Swap this value
+    // 4. Repeat if CAS fails
+    while (!writers_decremented) {
+
+        // 1.
+        uint32_t syncing_and_writers = ck_pr_load_32(&mstore->syncing_and_writers);
+        uint32_t writers = EXTRACT_WRITERS(syncing_and_writers);
+
+        // Invariants
+        ensure(writers > 0, "Would decrement the number of writers below zero");
+        ensure(ck_pr_load_32(&mstore->synced) == 0,
+               "The sync should not have gone through since we are not done writing");
+
+        // 2.
+        // 3.
+        if (ck_pr_cas_32(&mstore->syncing_and_writers, syncing_and_writers, syncing_and_writers - 1)) {
+            writers_decremented = true;
+        }
+    }
+
+    return ret;
 }
 
 enum store_read_status __mmap_cursor_position(struct mmap_store_cursor *cursor,
@@ -136,7 +185,7 @@ enum store_read_status __mmap_cursor_position(struct mmap_store_cursor *cursor,
 
     // If a user calls this store before any thread has called sync, that is a programming error.
     // TODO: Make this a real error.  An assert now just for debugging.
-    ensure(ck_pr_load_32(&cursor->store->syncing) == 1,
+    ensure(EXTRACT_SYNCING(ck_pr_load_32(&cursor->store->syncing_and_writers)) == 1,
            "Attempted to seek a cursor on a store before sync has been called");
 
     // Calling read before a store has finished syncing, however, may be more of a race condition,
@@ -223,7 +272,12 @@ store_cursor_t* _mmap_pop_cursor(store_t *store) {
     // This is really an mmap store
     struct mmap_store *mstore = (struct mmap_store*) store;
 
-    ensure(ck_pr_load_32(&mstore->writers) == 0, "We should not be reading the store when there are still writers");
+    // Assert invariants
+    uint32_t syncing_and_writers = ck_pr_load_32(&mstore->syncing_and_writers);
+    uint32_t syncing = EXTRACT_SYNCING(syncing_and_writers);
+    uint32_t writers = EXTRACT_WRITERS(syncing_and_writers);
+    ensure(writers == 0, "We should not be reading the store when there are still writers");
+    ensure(syncing == 1, "We should not be reading the store before it has started syncing");
     ensure(ck_pr_load_32(&mstore->synced) == 1, "We should not be reading the store before it has been synced");
 
     // Open a blank cursor
@@ -335,21 +389,35 @@ uint32_t _mmap_sync(store_t *store) {
 
     ensure(write_cursor > sizeof(uint32_t) * 2, "Attempted to sync an empty store");
 
-    // Write that we are actually syncing.  This will stop all new writers.
-    ck_pr_store_32(&mstore->syncing, 1);
+    // We must ensure that no writes are happening during a sync.  To do this, we pack both the
+    // "syncing" bit and the number of writers in the same 32 bit value.
+    // 1. Load the "syncing_and_writers" value
+    // 2. Set that we are syncing
+    // 3. Try to Compare and Swap this value
+    // 4. Repeat until "writers" == 0
+    while (1) {
 
-    // Ensure that the syncing flag is set before we check for writers
-    ck_pr_fence_memory();
+        // 1.
+        uint32_t syncing_and_writers = ck_pr_load_32(&mstore->syncing_and_writers);
+        uint32_t syncing = EXTRACT_SYNCING(syncing_and_writers);
+        uint32_t writers = EXTRACT_WRITERS(syncing_and_writers);
 
-    // If there are writers, abort.  If this is zero, we are guaranteed that no threads will write,
-    // since any new writer increments this variable before checking if the store is syncing, which
-    // means that no thread could possibly get a value of zero for mstore->syncing.
-    if (ck_pr_load_32(&mstore->writers) > 0) {
-        // TODO: More specific errors, to indicate that we were not able to sync because there were
-        // writers, not because of disk space or something.
-        // TODO: Do something clever to allow writes again if we stopped doing a sync?  We can leave
-        // this now because it seems safer.
-        return 1;
+        // Make sure we aren't already at 2^32 - 1 writers.  If we try to increment when we already have
+        // that many we will overflow the 31 bits we are using to store the writers.
+        ensure(writers < 0xEFFFFFFFU, "Too many writers");
+
+        // 2.
+        // 3.
+        if (syncing == 0) {
+            if (!ck_pr_cas_32(&mstore->syncing_and_writers, syncing_and_writers, SET_SYNCING(syncing_and_writers))) {
+                continue;
+            }
+        }
+
+        // 4.
+        if (writers == 0) {
+            break;
+        }
     }
 
     // The point we have written up to
@@ -362,10 +430,16 @@ uint32_t _mmap_sync(store_t *store) {
     ensure(msync(mstore->mapping, write_cursor, MS_SYNC) == 0, "Unable to msync");
     ensure(fsync(mstore->fd) == 0, "Unable to fsync");
 
-    ensure(ck_pr_load_32(&mstore->writers) == 0, "We should not be syncing the store when there are still writers");
-
     // Record that we synced successfully.  This will allow readers to progress.
     ck_pr_store_32(&mstore->synced, 1);
+
+    uint32_t syncing_and_writers = ck_pr_load_32(&mstore->syncing_and_writers);
+    uint32_t syncing = EXTRACT_SYNCING(syncing_and_writers);
+    uint32_t writers = EXTRACT_WRITERS(syncing_and_writers);
+
+    ensure(writers == 0, "We should not have synced the store when there are still writers");
+    ensure(syncing == 1, "We should not have synced the store when we did not mark it as syncing");
+
     return 0;
 }
 
@@ -498,8 +572,7 @@ store_t* create_mmap_store(uint32_t size, const char* base_dir, const char* name
     ck_pr_store_32(&store->write_cursor, off);
     ck_pr_store_32(&store->last_sync, 0);
     ck_pr_store_32(&store->read_cursor, -1);
-    ck_pr_store_32(&store->writers, 0);
-    ck_pr_store_32(&store->syncing, 0);
+    ck_pr_store_32(&store->syncing_and_writers, 0);
     ck_pr_store_32(&store->synced, 0);
     ck_pr_fence_atomic();
     ensure(msync(mapping, off, MS_SYNC) == 0, "Unable to sync");
@@ -558,10 +631,9 @@ store_t* open_mmap_store(const char* base_dir, const char* name, int flags) {
     ck_pr_store_32(&store->write_cursor, off);
     ck_pr_store_32(&store->last_sync, 0);
     ck_pr_store_32(&store->read_cursor, -1);
-    ck_pr_store_32(&store->writers, 0);
 
     // We infer that this store has been synced...
-    ck_pr_store_32(&store->syncing, 1);
+    ck_pr_store_32(&store->syncing_and_writers, 0x80000000U);
     ck_pr_store_32(&store->synced, 1);
     ck_pr_fence_atomic();
     ensure(msync(mapping, off, MS_SYNC) == 0, "Unable to sync");
