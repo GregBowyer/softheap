@@ -2,12 +2,17 @@ from cffi import FFI
 import pickle
 import os
 
+# Get the directory the script is currently running in, so that we can access all the shared objects
+# correctly.
+# TODO: Look at other python projects with C bindings and see if there's a better way to do this
+script_directory = os.path.dirname(os.path.abspath(__file__))
+
 _PERSISTENT_QUEUE_DECLARATIONS = ""
 
 # TODO: Clean this up.  This is kind of a hack to avoid copying that header over here.  We also need
 # to remove lines starting with "#", since the FFI library doesn't like anything that's meant for
 # the preprocessor.  Maybe we can just run the preprocessor here?
-with open("include/storage_manager.h") as f:
+with open(os.path.join(script_directory, "storage_manager.h")) as f:
     for line in f:
         if line[0] != "#":
             _PERSISTENT_QUEUE_DECLARATIONS += line
@@ -17,8 +22,8 @@ ffi = FFI()
 ffi.cdef(_PERSISTENT_QUEUE_DECLARATIONS)
 ffi.dlopen(None)
 # TODO: Actually just set rpath on libsoftheap.so correctly, since it depends on libck
-ffi.dlopen("./ck/lib/libck.so.0")
-sm_lib = ffi.dlopen("./libsoftheap.so")
+ffi.dlopen(os.path.join(script_directory, "./libck.so.0.4.3"))
+sm_lib = ffi.dlopen(os.path.join(script_directory,"./libsoftheap.so"))
 
 class PersistentQueue(object):
     """Persistent String Queue Implemented in C"""
