@@ -476,7 +476,9 @@ segment_list_t* create_segment_list(const char* base_dir, const char* name, uint
     segment_list->release_segment_for_reading = _segment_list_release_segment_for_reading;
 
     // TODO: Make the number of segments configurable
-    segment_list->segment_buffer = (segment_t*) calloc(1, sizeof(segment_t) * MAX_SEGMENTS);
+    // TODO: Find a batter way to manage segments than allocating a large circular buffer up front.
+    // Could potentially just used a linked list with an allocation pool.
+    segment_list->segment_buffer = (segment_t*) calloc(MAX_SEGMENTS, sizeof(segment_t));
     ensure(segment_list->segment_buffer != NULL, "Failed to allocate segment buffer");
 
     // The head points to the next free space in the segment list
@@ -517,7 +519,10 @@ segment_list_t* open_segment_list(const char* base_dir, const char* name, uint32
     segment_list->close = _segment_list_close;
 
     // TODO: Make the number of segments configurable
-    segment_list->segment_buffer = (segment_t*) calloc(1, sizeof(segment_t) * MAX_SEGMENTS);
+    // TODO: Find a batter way to manage segments than allocating a large circular buffer up front.
+    // Could potentially just used a linked list with an allocation pool.
+    segment_list->segment_buffer = (segment_t*) calloc(MAX_SEGMENTS, sizeof(segment_t));
+    ensure(segment_list->segment_buffer != NULL, "Failed to allocate segment buffer");
 
     // The head points to the next free space in the segment list
     segment_list->head = 0;
