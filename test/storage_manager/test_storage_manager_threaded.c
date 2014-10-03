@@ -342,6 +342,14 @@ TEST threaded_simultaneous_write_and_read_persistence_storage_manager_test() {
     pthread_cancel(t4);
     pthread_cancel(t5);
 
+    // Join with the threads to make sure cancellation has completed
+    printf("Joining threads\n");
+    pthread_join(t1, NULL);
+    pthread_join(t2, NULL);
+    pthread_join(t3, NULL);
+    pthread_join(t4, NULL);
+    pthread_join(t5, NULL);
+
     // Reopen storage manager
     // TODO: This test is leaky because we don't close the storage manager.  Trying to simulate a
     // crashed process.
