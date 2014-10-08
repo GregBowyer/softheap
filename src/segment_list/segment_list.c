@@ -27,18 +27,16 @@ static inline bool __is_segment_number_in_segment_list_inlock(segment_list_t *se
     return ((segment_list->tail <= segment_number) && (segment_number < segment_list->head));
 }
 
-// Allocate a segment.  We are assuming the list is either locked or being accessed from a single
-// threaded context
-int _initialize_segment_inlock(segment_list_t *segment_list, uint32_t segment_number, bool reopen_store) {
+/**
+ * Allocate a segment.  We are assuming the list is either locked or being accessed from a single
+ * threaded context
+ */
+int _allocate_segment_inlock(segment_list_t *segment_list, uint32_t segment_number, bool reopen_store) {
 
-    // Get pointer to this segment
     segment_t *segment = __segment_number_to_segment(segment_list, segment_number);
 
-    // Make sure we aren't initializing a segment from an invalid state
     ensure(segment->state == FREE || segment->state == CLOSED,
            "Attempted to initialize segment that is not either free or closed");
-
-    // Make sure we aren't initializing the same segment twice
     ensure(segment->segment_number != segment_number || segment_number == 0,
            "Attempted to initialize already initizlized segment");
     ensure(segment->store == NULL,
@@ -60,7 +58,26 @@ int _initialize_segment_inlock(segment_list_t *segment_list, uint32_t segment_nu
         delegate = create_mmap_store(segment_list->segment_size,
                                             segment_list->base_dir,
                                             segment_name,
-                                            segment_list->flags);
+                                            // TODO: If the process using the queue dies after a
+                                            // data file has been allocated, but before the sync
+                                            // pointer has been moved up, there will be a file that
+                                            // exists on the disk but is not part of our queue after
+                                            // we reopen the data files.  Therefore, if we are
+                                            // allocating a new segment, a file may exist in this
+                                            // case, which is a completely valid situation.
+                                            //
+                                            // Instead of this weakening of strictness here, the
+                                            // queue should potentially instead fail to open if any
+                                            // foreign files exist in the queue data directory that
+                                            // are not "in" the queue.  It could then fail with more
+                                            // informative error messages, and allow quick cleanup
+                                            // (or diagnosis) of potential problems.
+                                            //
+                                            // The "flags" passed through the storage manager all
+                                            // the way down into the store should also be a little
+                                            // better defined, so that behaviour in these cases can
+                                            // be configured more easily.
+                                            segment_list->flags | DELETE_IF_EXISTS);
     }
 
     free(segment_name);
@@ -79,40 +96,31 @@ int _initialize_segment_inlock(segment_list_t *segment_list, uint32_t segment_nu
     return 0;
 }
 
-// Allocate a segment.  We are assuming the list is either locked or being accessed from a single
-// threaded context
-int _destroy_segment_inlock(segment_list_t *segment_list, uint32_t segment_number, bool destroy_store) {
-    // Get pointer to this segment
+/*
+ * Free a segment.  We are assuming the list is either locked or being accessed from a single
+ * threaded context
+ */
+int _free_segment_inlock(segment_list_t *segment_list, uint32_t segment_number, bool destroy_store) {
     segment_t *segment = __segment_number_to_segment(segment_list, segment_number);
 
-    // Make sure we are destroying a segment that is actually in the list
     ensure(__is_segment_number_in_segment_list_inlock(segment_list, segment_number),
-           "Attempted to destory a segment not in the list");
-
-    // Make sure we are not destroying a segment that has already been destroyed
+           "Attempted to destroy a segment not in the list");
     ensure(segment->state != FREE, "Attempted to destroy segment already in the FREE state");
     ensure(segment->state != CLOSED, "Attempted to destroy segment already in the CLOSED state");
-
-    // Make sure we are freeing a segment that is initialized
     ensure(segment->segment_number == segment_number, "Attempted to destroy uninitialized segment");
     ensure(segment->store != NULL, "Attempted to destroy segment with null store");
-
-    // Make sure the segment refcount is zero
     ensure(ck_pr_load_32(&segment->refcount) == 0, "Attempted to destroy segment with non zero refcount");
 
-    // Free the underlying store
     if (destroy_store) {
         segment->store->destroy(segment->store);
-        // Mark segment as in the "FREE" state
         segment->state = FREE;
     }
     else {
         segment->store->close(segment->store, 1);
-        // Mark segment as in the "CLOSED" state
         segment->state = CLOSED;
     }
 
-    // Zero out the segment we just freed
+    // Zero out the segment we just freed for debugging
     segment->store = NULL;
     segment->segment_number = 0;
 
@@ -143,8 +151,8 @@ int _segment_list_allocate_segment(segment_list_t *segment_list, uint32_t segmen
     }
 
     ensure(segment->state == FREE, "Attempted to allocate segment not in the FREE state");
-    ensure(_initialize_segment_inlock(segment_list, segment_number, false/*reopen_store*/) == 0,
-           "Failed to initialize segment");
+    ensure(_allocate_segment_inlock(segment_list, segment_number, false/*reopen_store*/) == 0,
+           "Failed to allocate segment");
 
     // Move up the head, effectively allocating the segment
     segment_list->head++;
@@ -161,8 +169,12 @@ segment_t* _segment_list_get_segment_for_writing(struct segment_list *segment_li
     // We will never modify the segment list in this function, so we can take a read lock
     ck_rwlock_read_lock(segment_list->lock);
 
-    // Get pointer to this segment
     segment_t *segment = __segment_number_to_segment(segment_list, segment_number);
+
+    // Make sure we are not trying to get a segment before it has been allocated.  Getting a segment
+    // anytime after it was allocated can easily happen because of a slow thread, but getting it
+    // before it has been allocated should not happen.
+    ensure(segment_number < segment_list->head, "Attempted to get a segment before it was allocated");
 
     // This segment is outside the list
     // TODO: More specific error handling
@@ -186,11 +198,11 @@ segment_t* _segment_list_get_segment_for_writing(struct segment_list *segment_li
 }
 
 segment_t* _segment_list_get_segment_for_reading(struct segment_list *segment_list, uint32_t segment_number) {
+
     // We have to take a write lock because we might be allocating a segment (reopening it from an
     // existing file).
     ck_rwlock_write_lock(segment_list->lock);
 
-    // Get pointer to this segment
     segment_t *segment = __segment_number_to_segment(segment_list, segment_number);
 
     // This segment is outside the list
@@ -216,8 +228,9 @@ segment_t* _segment_list_get_segment_for_reading(struct segment_list *segment_li
 
     // If this segment is closed, reopen it
     if (segment->state == CLOSED) {
-        // Initialize the segment and reopen the existing store file
-        ensure(_initialize_segment_inlock(segment_list, segment_number, true/*reopen_store*/) == 0,
+
+        // Allocate the segment and reopen the existing store file
+        ensure(_allocate_segment_inlock(segment_list, segment_number, true/*reopen_store*/) == 0,
                "Failed to allocate segment, from existing file");
 
         // Reopened segments are in the READING state
@@ -235,7 +248,6 @@ end:
 int _segment_list_release_segment_for_writing(struct segment_list *segment_list, uint32_t segment_number) {
     ck_rwlock_read_lock(segment_list->lock);
 
-    // Get pointer to this segment
     segment_t *segment = __segment_number_to_segment(segment_list, segment_number);
 
     // TODO: make this an actual error
@@ -246,7 +258,6 @@ int _segment_list_release_segment_for_writing(struct segment_list *segment_list,
     ensure(segment->state != CLOSED, "Attempted to release writing segment in the CLOSED state");
     ensure(segment->state != READING, "Attempted to release writing segment in the READING state");
 
-    // This segment is already initialized, but decrement its refcount
     ck_pr_dec_32(&segment->refcount);
 
     ck_rwlock_read_unlock(segment_list->lock);
@@ -257,27 +268,19 @@ int _segment_list_release_segment_for_writing(struct segment_list *segment_list,
 int _segment_list_release_segment_for_reading(struct segment_list *segment_list, uint32_t segment_number) {
     ck_rwlock_read_lock(segment_list->lock);
 
-    // Get pointer to this segment
     segment_t *segment = __segment_number_to_segment(segment_list, segment_number);
 
     // TODO: make this an actual error
     ensure(__is_segment_number_in_segment_list_inlock(segment_list, segment_number),
            "Attempted to release a segment not in the list");
 
-    // We should never have a segment in the FREE state
     ensure(segment->state != FREE, "Attempted to release segment in the FREE state");
-
-    // We should never have a segment in the CLOSED state
     ensure(segment->state != CLOSED, "Attempted to release segment in the CLOSED state");
+    ensure(segment->state != WRITING, "Attempted to release reading segment in the WRITING state");
 
-    // We should not be reading from a segment in the WRITING state
-    ensure(segment->state != WRITING, "Attempted to release reading segment in the READING state");
-
-    // This segment is already initialized, but decrement its refcount
     ck_pr_dec_32(&segment->refcount);
 
     ck_rwlock_read_unlock(segment_list->lock);
-
     return 0;
 }
 
@@ -285,7 +288,6 @@ int _segment_list_close_segment(struct segment_list *segment_list, uint32_t segm
     // Take out a write lock so we are mutually exclusive with get_segment
     ck_rwlock_write_lock(segment_list->lock);
 
-    // Get pointer to this segment
     segment_t *segment = __segment_number_to_segment(segment_list, segment_number);
 
     // Check the refcount and fail to close the segment if the refcount is not zero
@@ -314,10 +316,9 @@ int _segment_list_close_segment(struct segment_list *segment_list, uint32_t segm
 
     // Destroy the segment, but close the store rather than destroying it because we don't want to
     // delete the on disk store files
-    ensure(_destroy_segment_inlock(segment_list, segment_number, false/*destroy_store*/) == 0,
+    ensure(_free_segment_inlock(segment_list, segment_number, false/*destroy_store*/) == 0,
            "Failed to internally destroy segment in close segment function");
 
-    // Mark this segment as CLOSED
     segment->state = CLOSED;
 
     ck_rwlock_write_unlock(segment_list->lock);
@@ -343,7 +344,6 @@ uint32_t _segment_list_free_segments(struct segment_list *segment_list, uint32_t
     while (segment_list->tail <= segment_number &&
            segment_list->head != segment_list->tail) {
 
-        // Get pointer to this segment
         segment_t *segment = __segment_number_to_segment(segment_list, segment_list->tail);
 
         // We should not be freeing a segment in the WRITING or CLOSED state
@@ -356,11 +356,9 @@ uint32_t _segment_list_free_segments(struct segment_list *segment_list, uint32_t
             break;
         }
 
-        // Destroy the segment
-        ensure(_destroy_segment_inlock(segment_list, segment->segment_number, true/*destroy_store*/) == 0,
+        ensure(_free_segment_inlock(segment_list, segment->segment_number, true/*destroy_store*/) == 0,
                "Failed to internally destroy segment in free segments function");
 
-        // Mark this segment as FREE
         segment->state = FREE;
 
         // Move the tail up
@@ -400,8 +398,7 @@ int _segment_list_destroy(segment_list_t *segment_list) {
         // destroy it
         if (segment->state != CLOSED) {
 
-            // Destroy the segment
-            ensure(_destroy_segment_inlock(segment_list, segment_list->tail, true/*destroy_store*/) == 0,
+            ensure(_free_segment_inlock(segment_list, segment_list->tail, true/*destroy_store*/) == 0,
                   "Failed to destroy segment when destroying segment list");
 
             // No need to advance the segment state machine because the list will not be used again
@@ -432,8 +429,8 @@ int _segment_list_close(segment_list_t *segment_list) {
         // If the segment has already been closed, the resources are freed, so there's no need to
         // destroy it
         if (segment->state != CLOSED) {
-            // Destroy the segment
-            ensure(_destroy_segment_inlock(segment_list, segment_list->tail, false/*destroy_store*/) == 0,
+
+            ensure(_free_segment_inlock(segment_list, segment_list->tail, false/*destroy_store*/) == 0,
                   "Failed to destroy segment when closing segment list");
 
             // No need to advance the segment state machine because the list will not be used again
@@ -471,7 +468,9 @@ segment_list_t* create_segment_list(const char* base_dir, const char* name, uint
     segment_list->release_segment_for_reading = _segment_list_release_segment_for_reading;
 
     // TODO: Make the number of segments configurable
-    segment_list->segment_buffer = (segment_t*) calloc(1, sizeof(segment_t) * MAX_SEGMENTS);
+    // TODO: Find a batter way to manage segments than allocating a large circular buffer up front.
+    // Could potentially just used a linked list with an allocation pool.
+    segment_list->segment_buffer = (segment_t*) calloc(MAX_SEGMENTS, sizeof(segment_t));
     ensure(segment_list->segment_buffer != NULL, "Failed to allocate segment buffer");
 
     // The head points to the next free space in the segment list
@@ -512,7 +511,10 @@ segment_list_t* open_segment_list(const char* base_dir, const char* name, uint32
     segment_list->close = _segment_list_close;
 
     // TODO: Make the number of segments configurable
-    segment_list->segment_buffer = (segment_t*) calloc(1, sizeof(segment_t) * MAX_SEGMENTS);
+    // TODO: Find a batter way to manage segments than allocating a large circular buffer up front.
+    // Could potentially just used a linked list with an allocation pool.
+    segment_list->segment_buffer = (segment_t*) calloc(MAX_SEGMENTS, sizeof(segment_t));
+    ensure(segment_list->segment_buffer != NULL, "Failed to allocate segment buffer");
 
     // The head points to the next free space in the segment list
     segment_list->head = 0;
@@ -542,7 +544,6 @@ segment_list_t* open_segment_list(const char* base_dir, const char* name, uint32
         ensure(!__is_segment_list_full_inlock(segment_list),
                "Segment list not large enough to hold all segments");
 
-        // Get pointer to this segment
         segment_t *segment = __segment_number_to_segment(segment_list, segment_list->head);
 
         // Start segments in the CLOSED state so that they will be lazily initialized as readers

@@ -36,3 +36,6 @@ install_manifest.txt
 build
 ck/tmp
 ck/src/concurrency-kit-stamp
+
+### Python ###
+*.pyc
