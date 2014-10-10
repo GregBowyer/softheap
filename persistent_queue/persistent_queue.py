@@ -112,6 +112,8 @@ class PersistentQueue(object):
         assert self.active is True
         self.active = False
         self.sm.destroy(self.sm)
+        for f in os.listdir(self.queue_dir):
+            os.remove(f)
         os.rmdir(self.queue_dir)
 
     def close(self):
