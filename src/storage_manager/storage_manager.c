@@ -70,7 +70,12 @@ void __lock_data_directory(const char* base_dir) {
     // Open lock file in data directory
     int lock_fd = openat(dir_fd, LOCK_FILENAME, O_RDWR | O_CREAT | O_EXCL | O_SYNC, (mode_t)0600);
     if (lock_fd < 0) {
-        perror("Failed to create lock file for storage_manager");
+        char* error_message = NULL;
+        ensure(
+            asprintf(&error_message, "Failed to create lock file for storage_manager %s", LOCK_FILENAME) > 0,
+           "Failed to allocate error_message");
+        perror(error_message);
+        free(error_message);
         ensure(0, "Failed to create lock file for storage_manager");
     }
 
