@@ -59,7 +59,9 @@ TEST test_basic_store() {
     ASSERT_EQ(status, END);
 
     // Cleanup
+    cursor->destroy(cursor);
     ((store_t*)store)->destroy((store_t*) store);
+    free(data);
 
     PASS();
 }
@@ -82,6 +84,7 @@ TEST test_compress_and_store() {
 
     // Cleanup
     ((store_t*)store)->destroy((store_t*) store);
+    free(data);
 
     PASS();
 }
@@ -140,7 +143,9 @@ TEST test_store_persistence() {
     ASSERT_EQ(status, END);
 
     // Cleanup
+    cursor->destroy(cursor);
     ((store_t*)store)->destroy((store_t*) store);
+    free(data);
 
     PASS();
 }

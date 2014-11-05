@@ -86,7 +86,9 @@ TEST test_basic_store() {
     ASSERT_EQ(status, END);
 
     // Cleanup
+    cursor->destroy(cursor);
     ((store_t*)store)->destroy((store_t*) store);
+    free(data);
 
     PASS();
 }
@@ -194,6 +196,7 @@ TEST test_actual_mapping() {
 
     // Cleanup
     ((store_t*)store)->destroy((store_t*) store);
+    ((store_t*)store2)->destroy((store_t*) store2);
 
     PASS();
 }
@@ -222,6 +225,7 @@ TEST test_out_of_bounds_read() {
     ASSERT_EQ(cursor->seek(cursor, SIZE * 2), OUT_OF_BOUNDS);
 
     // Cleanup
+    cursor->destroy(cursor);
     ((store_t*)store)->destroy((store_t*) store);
     free(data);
 
@@ -283,7 +287,9 @@ TEST test_store_persistence() {
     ASSERT_EQ(status, END);
 
     // Cleanup
+    cursor->destroy(cursor);
     ((store_t*)store)->destroy((store_t*) store);
+    free(data);
 
     PASS();
 }
@@ -343,7 +349,9 @@ TEST test_full_store() {
     ASSERT_EQ(status, END);
 
     // Cleanup
+    cursor->destroy(cursor);
     ((store_t*)store)->destroy((store_t*) store);
+    free(data);
 
     PASS();
 }
