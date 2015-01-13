@@ -80,10 +80,10 @@ class PersistentQueue(object):
         # We may have data in the queue that has not yet been synced.  Sync the data that we have in
         # the queue and try again.  If we still don't get anything, then the queue was empty at the
         # time we called sync.
-        if (cursor == ffi.NULL):
+        if cursor == ffi.NULL:
             self.sm.sync(self.sm, 1)
             cursor = self.sm.pop_cursor(self.sm)
-            if (cursor == ffi.NULL):
+            if cursor == ffi.NULL:
                 return None
 
         # Convert the value from a C void* to a python string

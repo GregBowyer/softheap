@@ -210,8 +210,7 @@ int _storage_manager_impl_write(storage_manager_t *storage_manager, void *data, 
         // If we have succeeded in writing, break out
         if (store_offset > 0) {
             break;
-        }
-        else {
+        } else {
 
             // Otherwise, attempt to allocate the next segment
             // TODO: The write may fail for another reason, so we may not want to allocate a
