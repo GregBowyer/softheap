@@ -87,12 +87,15 @@ class PersistentQueue(object):
                 return None
 
         # Convert the value from a C void* to a python string
-        raw_value = ffi.string(ffi.cast("char*", cursor.data), cursor.size)
+        cast = ffi.cast("char*", cursor.data)
+        raw_value = ffi.string(cast, cursor.size)
 
         # Convert the value back into its original object
         # TODO: This could be slow, but I think the data has to be serialized for it to be storable
         # in the queue.
         value = pickle.loads(raw_value)
+        del cast
+        del raw_value
 
         # Free the underlying cursor, since we've already extracted the data we need
         self.sm.free_cursor(self.sm, cursor)
