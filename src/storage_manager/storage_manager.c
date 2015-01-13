@@ -120,7 +120,7 @@ void _close_cursor(storage_manager_impl_t* sm, storage_manager_cursor_impl_t* cu
         // that has seen a larger sync tail may call the free segments function before us, which is
         // why the free_segments function has the semantics of freeing up to the given segment.
         if (ret < 0) {
-            return;
+            goto exit;
         }
 
         // We won the race, now it's our responsibility to free this from the segment list
@@ -131,6 +131,8 @@ void _close_cursor(storage_manager_impl_t* sm, storage_manager_cursor_impl_t* cu
             // TODO: Return and handle different types of errors from the free_segments function
         }
     }
+
+exit:
 
     // Free the cursor
     free(cursor);
