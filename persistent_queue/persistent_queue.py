@@ -53,10 +53,10 @@ class PersistentQueue(object):
         # Because the constructor runs first, so "q" will be a queue with a data directory that
         # doesn't exist.  Should do better checking of this, but how?  Can we lock a directory?
         if os.path.exists(queue_dir):
-            self.sm = sm_lib.open_storage_manager(self.c_queue_dir, self.c_queue_name, 1024 * 1024, 1)
+            self.sm = sm_lib.open_storage_manager(self.c_queue_dir, self.c_queue_name, 32 * 1024 * 1024, 1)
         else:
             os.makedirs(queue_dir)
-            self.sm = sm_lib.create_storage_manager(self.c_queue_dir, self.c_queue_name, 1024 * 1024, 1)
+            self.sm = sm_lib.create_storage_manager(self.c_queue_dir, self.c_queue_name, 32 * 1024 * 1024, 1)
 
         # Now this queue actually has an active storage manager
         self.active = True
