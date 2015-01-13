@@ -50,67 +50,6 @@ typedef struct storage_manager_impl {
 // Private helper functions
 //
 
-// Name of the file to use as a basic sanity check to fail in the case where two storage managers
-// are attempting to open the same set of data files
-#define LOCK_FILENAME "storage_manager_lock.pid"
-
-/*
- * Create a lock file in the given data directory.  While not perfect, this will at least give us
- * some naive protection against two different processes opening the same set of data files.
- */
-void __lock_data_directory(const char* base_dir) {
-
-    // Open data directory
-    int dir_fd = open(base_dir, O_DIRECTORY, (mode_t)0600);
-    if (dir_fd < 0) {
-        perror("Failed to open data directory for storage_manager");
-        ensure(0, "Failed to open data directory for storage_manager");
-    }
-
-    // Open lock file in data directory
-    int lock_fd = openat(dir_fd, LOCK_FILENAME, O_RDWR | O_CREAT | O_EXCL | O_SYNC, (mode_t)0600);
-    if (lock_fd < 0) {
-        char* error_message = NULL;
-        ensure(
-            asprintf(&error_message, "Failed to create lock file for storage_manager %s", LOCK_FILENAME) > 0,
-           "Failed to allocate error_message");
-        perror(error_message);
-        free(error_message);
-        ensure(0, "Failed to create lock file for storage_manager");
-    }
-
-    // Write pid to lock file
-    int pid = getpid();
-    ssize_t nwritten = write(lock_fd, &pid, sizeof(pid));
-    if (nwritten != sizeof(pid)) {
-        perror("Failed to write pid to storage_manager lock file");
-    }
-    if (fsync(lock_fd) != 0) {
-        perror("Failed to fsync storage_manager lock file");
-    }
-}
-
-/*
- * Remove the lock file in the given data directory.  While not perfect, this will at least give us
- * some naive protection against two different processes opening the same set of data files.
- */
-void __unlock_data_directory(const char* base_dir, bool ignore_not_found) {
-
-    // Open data directory
-    int dir_fd = open(base_dir, O_DIRECTORY, (mode_t)0600);
-    if (dir_fd < 0) {
-        perror("Failed to open data directory for storage_manager");
-        ensure(0, "Failed to open data directory for storage_manager");
-    }
-
-    // Remove lock file
-    int ret = unlinkat(dir_fd, LOCK_FILENAME, 0);
-    if (ret < 0 && !(errno == ENOENT && ignore_not_found)) {
-        perror("Failed to remove lock file for storage_manager");
-        ensure(0, "Failed to remove lock file for storage_manager");
-    }
-}
-
 /*
  * Pops a read cursor from the segment given by segment_number.  The caller is responsible for retry
  * logic.
@@ -385,9 +324,6 @@ int _storage_manager_impl_destroy(storage_manager_t *storage_manager) {
     sm->sync_head->destroy(sm->sync_head);
     sm->sync_tail->destroy(sm->sync_tail);
 
-    // Basic sanity check to make sure that another storage_manager process wasn't using these files
-    __unlock_data_directory(sm->base_dir, false);
-
     // Free the storage manager itself
     free(sm);
 
@@ -416,9 +352,6 @@ int _storage_manager_impl_close(storage_manager_t *storage_manager) {
     // Close the persistent sync values
     sm->sync_head->close(sm->sync_head);
     sm->sync_tail->close(sm->sync_tail);
-
-    // Basic sanity check to make sure that another storage_manager process wasn't using these files
-    __unlock_data_directory(sm->base_dir, false);
 
     // Free the storage manager itself
     free(sm);
@@ -560,12 +493,6 @@ int _storage_manager_impl_sync(storage_manager_t *storage_manager, int sync_curr
 // Storage manager constructor
 storage_manager_t* create_storage_manager(const char* base_dir, const char* name, int segment_size, int flags) {
 
-    // Basic sanity check to make sure that another storage_manager process isn't using these files
-    if (flags & DELETE_IF_EXISTS) {
-        __unlock_data_directory(base_dir, true);
-    }
-    __lock_data_directory(base_dir);
-
     // First, allocate the storage manager
     storage_manager_impl_t *sm = (storage_manager_impl_t*) calloc(1, sizeof(storage_manager_impl_t));
 
@@ -610,9 +537,6 @@ storage_manager_t* create_storage_manager(const char* base_dir, const char* name
 // Why do I have this as well as create?  Even the mmap store does nothing for this method.  Should
 // there be a destroy store?  A close store?
 storage_manager_t* open_storage_manager(const char* base_dir, const char* name, int segment_size, int flags) {
-
-    // Basic sanity check to make sure that another storage_manager process isn't using these files
-    __lock_data_directory(base_dir);
 
     // First, allocate the storage manager
     storage_manager_impl_t *sm = (storage_manager_impl_t*) calloc(1, sizeof(storage_manager_impl_t));
