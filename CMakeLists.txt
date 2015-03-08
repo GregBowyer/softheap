@@ -27,6 +27,7 @@ ADD_LIBRARY(lz4
 
 ADD_LIBRARY(softheap-static
     STATIC
+    src/common.c
     src/store/mmap.c
     src/store/lz4_store.c
     src/persistent_atomic_value.c
@@ -38,6 +39,7 @@ ADD_LIBRARY(softheap-static
 
 ADD_LIBRARY(softheap
     SHARED
+    src/common.c
     src/store/mmap.c
     src/store/lz4_store.c
     src/persistent_atomic_value.c
