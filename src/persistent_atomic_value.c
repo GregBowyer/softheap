@@ -1,5 +1,26 @@
 #include "persistent_atomic_value.h"
 
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+void _sanity_check(persistent_atomic_value_t *pav) {
+    printf("Sanity checking file: %s\n", pav->_filename);
+
+    int fd = open(pav->_filename, O_RDWR, (mode_t)0600);
+    ensure(fd >= 0, "Sanity check failure: failed to open counter file");
+
+    uint32_t temp_value;
+    ensure(read(fd, &temp_value, sizeof(temp_value)) > 0, "Sanity check failure: failed to read from counter file");
+    struct stat buf;
+    ensure(fstat(fd, &buf) == 0, "Sanity check failure: failed to fstat counter file");
+    int size = buf.st_size;
+    ensure(size >= 4, "Sanity check failure: counter file is less than 4 bytes");
+    ensure(size <= 4, "Sanity check failure: counter file is greater than 4 bytes");
+    ensure(temp_value == pav->_current_value, "Sanity check failure: counter file does not match our in memory value");
+    close(fd);
+}
+
 int _compare_and_swap(persistent_atomic_value_t *pav, uint32_t old_value, uint32_t new_value) {
     // First lock this counter
     ck_rwlock_write_lock(pav->_lock);
@@ -60,6 +81,7 @@ end:
     ck_rwlock_write_unlock(pav->_lock);
     // For now
     ensure(fail == 0, "Failed during persistent update");
+    _sanity_check(pav);
     return fail;
 }
 
