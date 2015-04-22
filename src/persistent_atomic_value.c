@@ -7,7 +7,7 @@
 void _sanity_check(persistent_atomic_value_t *pav) {
     printf("Sanity checking file: %s\n", pav->_filename);
 
-    int open_flags = O_RDONLY | O_SYNC;
+    int open_flags = O_RDONLY | O_SYNC | O_DIRECT;
     int fd = open(pav->_filename, open_flags, (mode_t)0600);
     ensure(fd >= 0, "Sanity check failure: failed to open counter file");
 
