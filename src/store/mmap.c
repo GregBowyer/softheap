@@ -12,6 +12,8 @@
 #define SET_SYNCING(x) (x | (1 << 31))
 #define EXTRACT_WRITERS(x) (x & 0x7FFFFFFFU)
 
+#define mstore_ensure(mstore, p, msg) ensure(p, "[%s] - %s\n", mstore->filename, msg)
+
 struct mmap_store {
     store_t store;
     int fd;
@@ -51,7 +53,7 @@ struct mmap_store_cursor {
 uint32_t _mmap_write(store_t *store, void *data, uint32_t size) {
     struct mmap_store *mstore = (struct mmap_store*) store;
     void * mapping = mstore->mapping;
-    ensure(mapping != NULL, "Bad mapping");
+    mstore_ensure(mstore, mapping != NULL, "Bad mapping");
 
     // We must ensure that no writes are happening during a sync.  To do this, we pack both the
     // "syncing" bit and the number of writers in the same 32 bit value.
@@ -70,7 +72,7 @@ uint32_t _mmap_write(store_t *store, void *data, uint32_t size) {
 
         // Make sure we aren't already at 2^32 - 1 writers.  If we try to increment when we already have
         // that many we will overflow the 31 bits we are using to store the writers.
-        ensure(writers < 0xEFFFFFFFU, "Too many writers");
+        mstore_ensure(mstore, writers < 0xEFFFFFFFU, "Too many writers");
 
         // 2.
         if (syncing == 1) {
@@ -84,7 +86,7 @@ uint32_t _mmap_write(store_t *store, void *data, uint32_t size) {
         }
     }
 
-    ensure(ck_pr_load_32(&mstore->synced) == 0, "A writer should not get here when the store is synced");
+    mstore_ensure(mstore, ck_pr_load_32(&mstore->synced) == 0, "A writer should not get here when the store is synced");
 
     // [uint32_t,BYTES]
     uint32_t *write_cursor = &mstore->write_cursor;
@@ -98,13 +100,13 @@ uint32_t _mmap_write(store_t *store, void *data, uint32_t size) {
     // store is empty.  This is to die fast on the case where we have a block that we can never
     // write to any store of this size.
     // TODO: Actually handle this case gracefully
-    ensure(((mstore->capacity - store->start_cursor(store)) >= required_size) ||
+    mstore_ensure(mstore, ((mstore->capacity - store->start_cursor(store)) >= required_size) ||
            (ck_pr_load_32(write_cursor) != store->start_cursor(store)),
            "Attempting to write a block of data larger than the total capacity of our store");
 
     while (true) {
         cursor_pos = ck_pr_load_32(write_cursor);
-        ensure(cursor_pos != 0, "Incorrect cursor pos");
+        mstore_ensure(mstore, cursor_pos != 0, "Incorrect cursor pos");
         uint32_t remaining = mstore->capacity - cursor_pos;
 
         if (remaining <= required_size) {
@@ -119,8 +121,8 @@ uint32_t _mmap_write(store_t *store, void *data, uint32_t size) {
             break;
         }
     }
-    ensure(new_pos != 0, "Invalid write position");
-    ensure(cursor_pos != 0, "Invalid cursor position");
+    mstore_ensure(mstore, new_pos != 0, "Invalid write position");
+    mstore_ensure(mstore, cursor_pos != 0, "Invalid cursor position");
 
     void *dest = (mapping + cursor_pos);
     ((uint32_t*)dest)[0] = (uint32_t) size;
@@ -132,16 +134,16 @@ uint32_t _mmap_write(store_t *store, void *data, uint32_t size) {
     long page_size = sysconf(_SC_PAGESIZE);
     uint32_t last_sync = ck_pr_load_32(&mstore->last_sync);
     if (new_pos > last_sync + page_size * 1024) {
-        ensure(last_sync % page_size == 0,
+        mstore_ensure(mstore, last_sync % page_size == 0,
                "Last sync offset is not a multiple of page size, which is needed for msync");
         uint32_t page_aligned_new_pos = (new_pos - (new_pos % page_size));
         if (ck_pr_cas_32(&mstore->last_sync, last_sync, page_aligned_new_pos)) {
             // TODO: Sync the previous page too, since it may have gotten dirtied
-            ensure(msync(mapping + last_sync, page_size * 1024, MS_ASYNC) == 0, "Unable to sync");
+            mstore_ensure(mstore, msync(mapping + last_sync, page_size * 1024, MS_ASYNC) == 0, "Unable to sync");
         }
     }
 
-    ensure(ck_pr_load_32(&mstore->synced) == 0, "A writer should not be here when the store is synced");
+    mstore_ensure(mstore, ck_pr_load_32(&mstore->synced) == 0, "A writer should not be here when the store is synced");
 
     // Return the position in the store that we wrote to
     // TODO: Clean up the error handling and return values for this function
@@ -165,8 +167,8 @@ decrement_writers:
         uint32_t writers = EXTRACT_WRITERS(syncing_and_writers);
 
         // Invariants
-        ensure(writers > 0, "Would decrement the number of writers below zero");
-        ensure(ck_pr_load_32(&mstore->synced) == 0,
+        mstore_ensure(mstore, writers > 0, "Would decrement the number of writers below zero");
+        mstore_ensure(mstore, ck_pr_load_32(&mstore->synced) == 0,
                "The sync should not have gone through since we are not done writing");
 
         // 2.
@@ -181,11 +183,11 @@ decrement_writers:
 
 enum store_read_status __mmap_cursor_position(struct mmap_store_cursor *cursor,
                                               uint32_t offset) {
-    ensure(cursor->store != NULL, "Broken cursor");
+    mstore_ensure(cursor->store, cursor->store != NULL, "Broken cursor");
 
     // If a user calls this store before any thread has called sync, that is a programming error.
     // TODO: Make this a real error.  An assert now just for debugging.
-    ensure(EXTRACT_SYNCING(ck_pr_load_32(&cursor->store->syncing_and_writers)) == 1,
+    mstore_ensure(cursor->store, EXTRACT_SYNCING(ck_pr_load_32(&cursor->store->syncing_and_writers)) == 1,
            "Attempted to seek a cursor on a store before sync has been called");
 
     // Calling read before a store has finished syncing, however, may be more of a race condition,
@@ -204,7 +206,7 @@ enum store_read_status __mmap_cursor_position(struct mmap_store_cursor *cursor,
     void *src = (cursor->store->mapping + offset);
     uint32_t size = ((uint32_t*)src)[0];
     if (size == 0) return END; // We have reached the synthetic end of the data
-    ensure(offset + size + sizeof(uint32_t) < cursor->store->capacity, "Found a block that runs over the end of our store");
+    mstore_ensure(cursor->store, offset + size + sizeof(uint32_t) < cursor->store->capacity, "Found a block that runs over the end of our store");
 
     cursor->next_offset = (offset + sizeof(uint32_t) + size);
     ((store_cursor_t*)cursor)->offset = offset;
@@ -221,7 +223,7 @@ enum store_read_status __mmap_cursor_position(struct mmap_store_cursor *cursor,
 enum store_read_status _mmap_cursor_advance(store_cursor_t *cursor) {
     struct mmap_store_cursor *mcursor = (struct mmap_store_cursor*) cursor;
     if (mcursor->next_offset == 0) return UNINITIALISED_CURSOR;
-    ensure(mcursor->store != NULL, "Broken cursor");
+    mstore_ensure(mcursor->store, mcursor->store != NULL, "Broken cursor");
 
     enum store_read_status status = __mmap_cursor_position(mcursor,
                                                            mcursor->next_offset);
@@ -250,7 +252,7 @@ void _mmap_cursor_destroy(store_cursor_t *cursor) {
 store_cursor_t* _mmap_open_cursor(store_t *store) {
     struct mmap_store *mstore = (struct mmap_store*) store;
     void * mapping = mstore->mapping;
-    ensure(mapping != NULL, "Bad mapping");
+    mstore_ensure(mstore, mapping != NULL, "Bad mapping");
 
     // TODO - We dont have to allocate one each time, we can stash a
     // pool of these on the thread and only allocate when we have no
@@ -276,9 +278,9 @@ store_cursor_t* _mmap_pop_cursor(store_t *store) {
     uint32_t syncing_and_writers = ck_pr_load_32(&mstore->syncing_and_writers);
     uint32_t syncing = EXTRACT_SYNCING(syncing_and_writers);
     uint32_t writers = EXTRACT_WRITERS(syncing_and_writers);
-    ensure(writers == 0, "We should not be reading the store when there are still writers");
-    ensure(syncing == 1, "We should not be reading the store before it has started syncing");
-    ensure(ck_pr_load_32(&mstore->synced) == 1, "We should not be reading the store before it has been synced");
+    mstore_ensure(mstore, writers == 0, "We should not be reading the store when there are still writers");
+    mstore_ensure(mstore, syncing == 1, "We should not be reading the store before it has started syncing");
+    mstore_ensure(mstore, ck_pr_load_32(&mstore->synced) == 1, "We should not be reading the store before it has been synced");
 
     // Open a blank cursor
     struct mmap_store_cursor* cursor = (struct mmap_store_cursor*) _mmap_open_cursor(store);
@@ -293,9 +295,9 @@ store_cursor_t* _mmap_pop_cursor(store_t *store) {
 
         // Seek to the read offset
         enum store_read_status ret = _mmap_cursor_seek((store_cursor_t*) cursor, next_offset);
-        ensure(ret != END, "Failed to seek due to empty store");
-        ensure(ret != UNSYNCED_STORE, "Failed to seek due to unsynced store");
-        ensure(ret == SUCCESS, "Failed to seek");
+        mstore_ensure(mstore, ret != END, "Failed to seek due to empty store");
+        mstore_ensure(mstore, ret != UNSYNCED_STORE, "Failed to seek due to unsynced store");
+        mstore_ensure(mstore, ret == SUCCESS, "Failed to seek");
 
         // Set the read cursor.  Note we are setting it to the offset of the thing we are reading,
         // because of the logic below
@@ -309,15 +311,15 @@ store_cursor_t* _mmap_pop_cursor(store_t *store) {
 
     // Seek to the current read offset
     enum store_read_status ret = _mmap_cursor_seek((store_cursor_t*) cursor, current_offset);
-    ensure(ret != UNSYNCED_STORE, "Failed to seek due to unsynced store");
-    ensure(ret == SUCCESS, "Failed to seek");
+    mstore_ensure(mstore, ret != UNSYNCED_STORE, "Failed to seek due to unsynced store");
+    mstore_ensure(mstore, ret == SUCCESS, "Failed to seek");
 
     // Save our offset so we can try to CAS
     uint32_t next_offset = cursor->next_offset;
 
     // This is our only way to advance, so we have to do this
     ret = _mmap_cursor_advance((store_cursor_t*) cursor);
-    ensure(ret == SUCCESS || ret == END, "Failed to advance");
+    mstore_ensure(mstore, ret == SUCCESS || ret == END, "Failed to advance");
 
     // If we advanced successfully, try to CAS the read cursor
     while (ret != END) {
@@ -334,14 +336,14 @@ store_cursor_t* _mmap_pop_cursor(store_t *store) {
 
         // Seek to the current read offset
         ret = _mmap_cursor_seek((store_cursor_t*) cursor, current_offset);
-        ensure(ret == SUCCESS, "Failed to seek");
+        mstore_ensure(mstore, ret == SUCCESS, "Failed to seek");
 
         // Save our offset so we can try to CAS
         next_offset = cursor->next_offset;
 
         // This is our only way to advance, so we have to do this
         ret = _mmap_cursor_advance((store_cursor_t*) cursor);
-        ensure(ret == SUCCESS || ret == END, "Failed to advance");
+        mstore_ensure(mstore, ret == SUCCESS || ret == END, "Failed to advance");
     }
 
     ((store_cursor_t*) cursor)->destroy((store_cursor_t*) cursor);
@@ -387,7 +389,7 @@ uint32_t _mmap_sync(store_t *store) {
     // The point we have written up to
     uint32_t write_cursor = ck_pr_load_32(&mstore->write_cursor);
 
-    ensure(write_cursor > sizeof(uint32_t) * 2, "Attempted to sync an empty store");
+    mstore_ensure(mstore, write_cursor > sizeof(uint32_t) * 2, "Attempted to sync an empty store");
 
     // We must ensure that no writes are happening during a sync.  To do this, we pack both the
     // "syncing" bit and the number of writers in the same 32 bit value.
@@ -404,7 +406,7 @@ uint32_t _mmap_sync(store_t *store) {
 
         // Make sure we aren't already at 2^32 - 1 writers.  If we try to increment when we already have
         // that many we will overflow the 31 bits we are using to store the writers.
-        ensure(writers < 0xEFFFFFFFU, "Too many writers");
+        mstore_ensure(mstore, writers < 0xEFFFFFFFU, "Too many writers");
 
         // 2.
         // 3.
@@ -427,8 +429,8 @@ uint32_t _mmap_sync(store_t *store) {
     // store.
     //TODO: Protect the nearest page once sunk
     //mprotect(mapping, off, PROT_READ);
-    ensure(msync(mstore->mapping, write_cursor, MS_SYNC) == 0, "Unable to msync");
-    ensure(fsync(mstore->fd) == 0, "Unable to fsync");
+    mstore_ensure(mstore, msync(mstore->mapping, write_cursor, MS_SYNC) == 0, "Unable to msync");
+    mstore_ensure(mstore, fsync(mstore->fd) == 0, "Unable to fsync");
 
     // Record that we synced successfully.  This will allow readers to progress.
     ck_pr_store_32(&mstore->synced, 1);
@@ -437,8 +439,8 @@ uint32_t _mmap_sync(store_t *store) {
     uint32_t syncing = EXTRACT_SYNCING(syncing_and_writers);
     uint32_t writers = EXTRACT_WRITERS(syncing_and_writers);
 
-    ensure(writers == 0, "We should not have synced the store when there are still writers");
-    ensure(syncing == 1, "We should not have synced the store when we did not mark it as syncing");
+    mstore_ensure(mstore, writers == 0, "We should not have synced the store when there are still writers");
+    mstore_ensure(mstore, syncing == 1, "We should not have synced the store when we did not mark it as syncing");
 
     return 0;
 }
@@ -454,14 +456,14 @@ uint32_t _mmap_sync(store_t *store) {
 int _mmap_close(store_t *store, bool sync) {
     struct mmap_store *mstore = (struct mmap_store*) store;
     void * mapping = mstore->mapping;
-    ensure(mapping != NULL, "Bad mapping");
+    mstore_ensure(mstore, mapping != NULL, "Bad mapping");
 
     int ret = close(mstore->fd);
-    ensure(ret == 0, "Failed to close mmaped file");
+    mstore_ensure(mstore, ret == 0, "Failed to close mmaped file");
     mstore->fd = 0;
 
     ret = munmap(mstore->mapping, mstore->capacity);
-    ensure(ret == 0, "Failed to munmap mmaped file");
+    mstore_ensure(mstore, ret == 0, "Failed to munmap mmaped file");
     mstore->mapping = NULL;
 
     free(mstore->filename);
@@ -491,15 +493,15 @@ int _mmap_close(store_t *store, bool sync) {
 int _mmap_destroy(store_t *store) {
     struct mmap_store *mstore = (struct mmap_store*) store;
     void * mapping = mstore->mapping;
-    ensure(mapping != NULL, "Bad mapping");
+    mstore_ensure(mstore, mapping != NULL, "Bad mapping");
 
     int ret = munmap(mstore->mapping, mstore->capacity);
-    ensure(ret == 0, "Failed to munmap mmaped file");
+    mstore_ensure(mstore, ret == 0, "Failed to munmap mmaped file");
 
     ret = close(mstore->fd);
-    ensure(ret == 0, "Failed to close mmaped file");
+    mstore_ensure(mstore, ret == 0, "Failed to close mmaped file");
 
-    ensure(unlink(mstore->filename) == 0, "Failed to unlink backing store file");
+    mstore_ensure(mstore, unlink(mstore->filename) == 0, "Failed to unlink backing store file");
     free(mstore->filename);
 
     store->write        = NULL;
