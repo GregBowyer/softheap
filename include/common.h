@@ -4,10 +4,12 @@
 #define _XOPEN_SOURCE 700
 #define _BSD_SOURCE
 #define _GNU_SOURCE // asprintf
-
 #include <stdio.h>
-#include <stdlib.h>
+
 #include <execinfo.h>
+#include <stdarg.h>
+#include <stdlib.h>
+#include <string.h>
 
 // TODO: Move this to a better place
 static inline void printBacktrace() {
@@ -22,14 +24,15 @@ static inline void printBacktrace() {
     free(funcNames);
 }
 
+void debugprintf(char *file, int line, const char *format, ...);
+
 // ensure is kinda like assert but it is always executed
-#define ensure(p, msg)                                   \
+#define ensure(p, args...)                               \
 do {                                                     \
     if (!(p)) {                                          \
-        printf("%s - %s:%d\n", msg, __FILE__, __LINE__);   \
+        debugprintf(__FILE__, __LINE__, ## args);        \
         printBacktrace();                                \
         abort();                                         \
     }                                                    \
 } while(0)
-
 #endif
